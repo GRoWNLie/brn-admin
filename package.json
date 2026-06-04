@@ -18,7 +18,7 @@
     "bcryptjs": "^2.4.3",
     "fast-xml-parser": "^4.4.0",
     "mysql2": "^3.10.1",
-    "next": "14.2.5",
+    "next": "^14.2.35",
     "next-auth": "^4.24.7",
     "react": "^18",
     "react-dom": "^18"
@@ -30,7 +30,7 @@
     "@types/react": "^18",
     "@types/react-dom": "^18",
     "eslint": "^8",
-    "eslint-config-next": "14.2.5",
+    "eslint-config-next": "^14.2.35",
     "prisma": "^5.16.0",
     "typescript": "^5"
   }
