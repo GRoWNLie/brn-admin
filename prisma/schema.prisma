@@ -1,0 +1,1097 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN     // Tam erişim — ekip, ayarlar, audit, tüm modüller
+  MANAGER   // Ürün/sipariş/müşteri + raporlar + toplu işlemler (ayarlar/ekip hariç)
+  EDITOR    // Ürün ekle/düzenle, sipariş görüntüle (silme/fiyat değişikliği yok)
+  VIEWER    // Sadece okuma
+}
+
+model User {
+  id        Int        @id @default(autoincrement())
+  name      String
+  email     String     @unique
+  password  String
+  role      Role       @default(VIEWER)
+  active    Boolean    @default(true)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  auditLogs AuditLog[]
+}
+
+/// Önemli işlemlerin denetim kaydı: kim, ne, ne zaman
+model AuditLog {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @map("user_id")
+  userEmail String   @map("user_email")    // user silinse de geçmiş okunabilsin
+  action    String   // ör: "products.bulk_delete", "team.invite", "settings.update"
+  resource  String?  // ör: "product:gid://...", "user:42"
+  detail    Json?
+  ip        String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([createdAt])
+  @@index([action])
+  @@map("audit_logs")
+}
+
+model Feed {
+  id           Int       @id @default(autoincrement())
+  shop         String    @default("xyc2un-pk.myshopify.com")
+  title        String?
+  url          String?
+  productCount Int       @default(0) @map("product_count")
+  status       String    @default("Aktif")
+  syncStatus   String    @default("Güncel") @map("sync_status")
+  lastSync     String?   @map("last_sync")
+  nextSync     String?   @map("next_sync")
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  rules    Rule[]
+  filters  Filter[]
+  settings Setting[]
+  mappings Mapping[]
+  products Product[]
+
+  @@map("feeds")
+}
+
+model Rule {
+  id                Int     @id @default(autoincrement())
+  feedId            Int     @map("feed_id")
+  ruleType          String? @map("rule_type")
+  targetField       String? @map("target_field")
+  calcMethod        String? @map("calc_method")
+  mathSteps         Json?   @map("math_steps")
+  roundingType      String? @map("rounding_type")
+  roundingDecimals  Int     @default(2) @map("rounding_decimals")
+  fixedDecimalValue Int     @default(99) @map("fixed_decimal_value")
+
+  feed Feed @relation(fields: [feedId], references: [id], onDelete: Cascade)
+
+  @@map("rules")
+}
+
+model Filter {
+  id          Int     @id @default(autoincrement())
+  feedId      Int     @map("feed_id")
+  filterType  String? @map("filter_type")
+  fieldName   String? @map("field_name")
+  operator    String?
+  filterValue String? @map("filter_value")
+
+  feed Feed @relation(fields: [feedId], references: [id], onDelete: Cascade)
+
+  @@map("filters")
+}
+
+model Setting {
+  id                      Int      @id @default(autoincrement())
+  feedId                  Int      @map("feed_id")
+  publishChannel          String?  @map("publish_channel")
+  targetCollection        String?  @map("target_collection")
+  allowUpdate             Boolean  @default(true) @map("allow_update")
+  allowNew                Boolean  @default(true) @map("allow_new")
+  criticalStockEnabled    Boolean  @default(true) @map("critical_stock_enabled")
+  criticalStockThreshold  Int      @default(3) @map("critical_stock_threshold")
+
+  feed Feed @relation(fields: [feedId], references: [id], onDelete: Cascade)
+
+  @@map("settings")
+}
+
+model Mapping {
+  id          Int   @id @default(autoincrement())
+  feedId      Int   @map("feed_id")
+  mappingData Json? @map("mapping_data")
+
+  feed Feed @relation(fields: [feedId], references: [id], onDelete: Cascade)
+
+  @@map("mappings")
+}
+
+model Export {
+  id                Int       @id @default(autoincrement())
+  shop              String    @default("xyc2un-pk.myshopify.com")
+  title             String
+  slug              String    @unique
+  rootTag           String    @default("products") @map("root_tag")
+  itemTag           String    @default("product") @map("item_tag")
+  encoding          String    @default("UTF-8")
+  mappingData       Json?     @map("mapping_data")
+  filtersData       Json?     @map("filters_data")
+  includeImages     Boolean   @default(true) @map("include_images")
+  includeVariants   Boolean   @default(true) @map("include_variants")
+  status            String    @default("Aktif")
+  productCount      Int       @default(0) @map("product_count")
+  lastGeneratedAt   DateTime? @map("last_generated_at")
+  cachedXml         String?   @map("cached_xml") @db.Text
+  autoRefreshMin    Int       @default(60) @map("auto_refresh_min")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  @@map("exports")
+}
+
+model Product {
+  id               Int      @id @default(autoincrement())
+  feedId           Int      @map("feed_id")
+  productId        String?  @map("product_id")
+  title            String?
+  description      String?
+  price            Decimal  @default(0) @db.Decimal(10, 2)
+  compareAtPrice   Decimal  @default(0) @map("compare_at_price") @db.Decimal(10, 2)
+  stock            Int      @default(0)
+  category         String?
+  brand            String?
+  images           Json?
+  status           String   @default("Active")
+  shopifyProductId String?  @map("shopify_product_id")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  feed Feed @relation(fields: [feedId], references: [id], onDelete: Cascade)
+
+  @@map("products")
+}
+
+// Shopify'dan gelen webhook çağrılarının kalıcı kaydı
+model WebhookLog {
+  id          Int      @id @default(autoincrement())
+  topic       String
+  shopDomain  String   @map("shop_domain")
+  payloadJson Json     @map("payload_json")
+  hmacValid   Boolean  @default(true) @map("hmac_valid")
+  processed   Boolean  @default(false)
+  errorMsg    String?  @map("error_msg")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([topic])
+  @@index([createdAt])
+  @@map("webhook_logs")
+}
+
+// =========================================================
+//                     TEDARIKCILER
+// =========================================================
+
+model Supplier {
+  id        Int      @id @default(autoincrement())
+  name      String
+  contact   String?
+  email     String?
+  phone     String?
+  address   String?  @db.Text
+  taxId     String?  @map("tax_id")
+  notes     String?  @db.Text
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  purchaseOrders PurchaseOrder[]
+  @@map("suppliers")
+}
+
+// =========================================================
+//                     SATIN ALMA
+// =========================================================
+
+model PurchaseOrder {
+  id            Int       @id @default(autoincrement())
+  poNumber      String    @unique @map("po_number")
+  supplierId    Int       @map("supplier_id")
+  status        String    @default("DRAFT")
+  notes         String?   @db.Text
+  expectedAt    DateTime? @map("expected_at")
+  receivedAt    DateTime? @map("received_at")
+  totalAmount   Decimal   @default(0) @db.Decimal(12, 2) @map("total_amount")
+  currency      String    @default("TRY")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  supplier      Supplier  @relation(fields: [supplierId], references: [id])
+  items         PurchaseOrderItem[]
+
+  @@index([status])
+  @@map("purchase_orders")
+}
+
+model PurchaseOrderItem {
+  id              Int     @id @default(autoincrement())
+  purchaseOrderId Int     @map("purchase_order_id")
+  shopifyProductId String? @map("shopify_product_id")
+  shopifyVariantId String? @map("shopify_variant_id")
+  inventoryItemId String? @map("inventory_item_id")
+  locationId      String? @map("location_id")
+  title           String
+  sku             String?
+  quantity        Int
+  receivedQty     Int     @default(0) @map("received_qty")
+  unitCost        Decimal @db.Decimal(12, 2) @map("unit_cost")
+
+  order PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  @@map("purchase_order_items")
+}
+
+// =========================================================
+//                     STOK TRANSFERI
+// =========================================================
+
+model StockTransfer {
+  id              Int       @id @default(autoincrement())
+  transferNumber  String    @unique @map("transfer_number")
+  fromLocationId  String    @map("from_location_id")
+  fromLocationName String   @map("from_location_name")
+  toLocationId    String    @map("to_location_id")
+  toLocationName  String    @map("to_location_name")
+  status          String    @default("DRAFT")
+  notes           String?   @db.Text
+  shippedAt       DateTime? @map("shipped_at")
+  receivedAt      DateTime? @map("received_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  items           StockTransferItem[]
+
+  @@index([status])
+  @@map("stock_transfers")
+}
+
+model StockTransferItem {
+  id          Int     @id @default(autoincrement())
+  transferId  Int     @map("transfer_id")
+  shopifyVariantId String? @map("shopify_variant_id")
+  inventoryItemId String? @map("inventory_item_id")
+  title       String
+  sku         String?
+  quantity    Int
+  receivedQty Int     @default(0) @map("received_qty")
+
+  transfer StockTransfer @relation(fields: [transferId], references: [id], onDelete: Cascade)
+  @@map("stock_transfer_items")
+}
+
+// =========================================================
+//                     STOK SAYIMI
+// =========================================================
+
+model StockCount {
+  id            Int      @id @default(autoincrement())
+  countNumber   String   @unique @map("count_number")
+  locationId    String   @map("location_id")
+  locationName  String   @map("location_name")
+  // status: IN_PROGRESS / PENDING_APPROVAL / COMPLETED / CANCELLED
+  status        String   @default("IN_PROGRESS")
+  notes         String?  @db.Text
+  itemCount     Int      @default(0) @map("item_count")
+  diffPositive  Int      @default(0) @map("diff_positive")
+  diffNegative  Int      @default(0) @map("diff_negative")
+  startedAt     DateTime @default(now()) @map("started_at")
+  submittedAt   DateTime? @map("submitted_at")
+  approvedAt    DateTime? @map("approved_at")
+  approvedBy    String?  @map("approved_by")
+  appliedToShopify Boolean @default(false) @map("applied_to_shopify")
+  completedAt   DateTime? @map("completed_at")
+
+  items         StockCountItem[]
+  @@map("stock_counts")
+}
+
+model StockCountItem {
+  id           Int     @id @default(autoincrement())
+  countId      Int     @map("count_id")
+  shopifyVariantId String? @map("shopify_variant_id")
+  inventoryItemId  String? @map("inventory_item_id")
+  title        String
+  sku          String?
+  barcode      String?
+  location     String?
+  expected     Int     @default(0)
+  counted      Int     @default(0)
+  diff         Int     @default(0)
+  countedAt    DateTime @default(now()) @map("counted_at")
+
+  count StockCount @relation(fields: [countId], references: [id], onDelete: Cascade)
+  @@map("stock_count_items")
+}
+
+// Depo raf/koli lokasyon sistemi — SKU bazli. Sayim sirasinda girilir,
+// urunler listesinde ve siparis detayinda gosterilir.
+model BinLocation {
+  id        Int      @id @default(autoincrement())
+  sku       String   @unique
+  location  String
+  title     String?
+  updatedAt DateTime @updatedAt @map("updated_at")
+  @@map("bin_locations")
+}
+
+// =========================================================
+//                     FIYAT LISTESI
+// =========================================================
+
+model PriceList {
+  id          Int      @id @default(autoincrement())
+  name        String
+  segmentType String   @default("all") @map("segment_type")
+  segmentValue String?  @map("segment_value")
+  adjustmentType String @default("percent_off") @map("adjustment_type")
+  adjustmentValue Decimal @db.Decimal(10, 2) @map("adjustment_value")
+  active      Boolean  @default(true)
+  startsAt    DateTime? @map("starts_at")
+  endsAt      DateTime? @map("ends_at")
+  notes       String?  @db.Text
+  itemCount   Int      @default(0) @map("item_count")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  items       PriceListItem[]
+  @@map("price_lists")
+}
+
+model PriceListItem {
+  id            Int     @id @default(autoincrement())
+  priceListId   Int     @map("price_list_id")
+  shopifyProductId String @map("shopify_product_id")
+  shopifyVariantId String? @map("shopify_variant_id")
+  title         String
+  originalPrice Decimal @db.Decimal(10, 2) @map("original_price")
+  newPrice      Decimal @db.Decimal(10, 2) @map("new_price")
+
+  priceList PriceList @relation(fields: [priceListId], references: [id], onDelete: Cascade)
+  @@map("price_list_items")
+}
+
+// =========================================================
+//                     EMAIL PAZARLAMA
+// =========================================================
+
+model EmailTemplate {
+  id          Int      @id @default(autoincrement())
+  name        String
+  // slug: welcome / abandoned_cart / order_confirmation / shipping / vip_offer
+  slug        String   @unique
+  subject     String
+  bodyHtml    String   @db.Text @map("body_html")
+  // Otomatik tetikleyici: manual / abandoned_cart / order_paid / order_fulfilled / signup
+  trigger     String   @default("manual")
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  campaigns   EmailCampaign[]
+  @@map("email_templates")
+}
+
+model EmailCampaign {
+  id            Int       @id @default(autoincrement())
+  name          String
+  templateId    Int?      @map("template_id")
+  // segment: all / vip / active / risky / custom (JSON)
+  segmentType   String    @map("segment_type")
+  segmentValue  Json?     @map("segment_value")
+  // status: DRAFT / SCHEDULED / SENDING / SENT / FAILED
+  status        String    @default("DRAFT")
+  scheduledAt   DateTime? @map("scheduled_at")
+  sentAt        DateTime? @map("sent_at")
+  recipientCount Int      @default(0) @map("recipient_count")
+  sentCount     Int       @default(0) @map("sent_count")
+  failCount     Int       @default(0) @map("fail_count")
+  openCount     Int       @default(0) @map("open_count")
+  clickCount    Int       @default(0) @map("click_count")
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  template      EmailTemplate? @relation(fields: [templateId], references: [id])
+  @@map("email_campaigns")
+}
+
+model EmailLog {
+  id          Int      @id @default(autoincrement())
+  campaignId  Int?     @map("campaign_id")
+  toEmail     String   @map("to_email")
+  toName      String?  @map("to_name")
+  subject     String
+  // status: SENT / FAILED / BOUNCED / OPENED / CLICKED
+  status      String   @default("SENT")
+  resendId    String?  @map("resend_id")
+  errorMsg    String?  @map("error_msg")
+  sentAt      DateTime @default(now()) @map("sent_at")
+
+  @@index([toEmail])
+  @@index([sentAt])
+  @@map("email_logs")
+}
+
+// =========================================================
+//                     AI ASİSTAN
+// =========================================================
+
+model AiConversation {
+  id          Int      @id @default(autoincrement())
+  userId      Int      @map("user_id")
+  title       String   @default("Yeni Sohbet")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  messages    AiMessage[]
+  @@map("ai_conversations")
+}
+
+model AiMessage {
+  id              Int       @id @default(autoincrement())
+  conversationId  Int       @map("conversation_id")
+  // role: user / assistant
+  role            String
+  content         String    @db.Text
+  // Tool use metadata (Claude tool_use / tool_result)
+  toolName        String?   @map("tool_name")
+  toolInput       Json?     @map("tool_input")
+  toolResult      Json?     @map("tool_result")
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  conversation    AiConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  @@map("ai_messages")
+}
+
+// Sistem içi bildirimler — Topbar zilinde gösterilir
+model Notification {
+  id        Int      @id @default(autoincrement())
+  // userId null = TÜM kullanıcılara (broadcast)
+  userId    Int?     @map("user_id")
+  title     String
+  body      String   @db.Text
+  // tıklayınca yönlenecek URL (örn: /orders/123)
+  link      String?
+  // category: info / success / warning / error / order / stock / payment / system
+  category  String   @default("info")
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([userId, read])
+  @@index([createdAt])
+  @@map("notifications")
+}
+
+// Aktif webhook abonelikleri (Shopify'a kayıtlı olanlar)
+model WebhookSubscription {
+  id           Int      @id @default(autoincrement())
+  shopifyId    String   @unique @map("shopify_id")
+  topic        String
+  callbackUrl  String   @map("callback_url")
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@map("webhook_subscriptions")
+}
+
+// =========================================================
+//                     UPSELL & CROSS-SELL
+// =========================================================
+
+model UpsellRule {
+  id              Int      @id @default(autoincrement())
+  name            String
+  // sourceType: product / tag / category / any
+  sourceType      String   @map("source_type")
+  sourceValue     String?  @map("source_value")
+  // Hedef urun Shopify ID array
+  targetProductIds Json    @map("target_product_ids")
+  // placement: cart / product_page / checkout / post_purchase
+  placement       String   @default("cart")
+  // ruleType: upsell / cross_sell / bump
+  ruleType        String   @default("cross_sell") @map("rule_type")
+  // Indirim yuzdesi
+  discountPercent Int?     @map("discount_percent")
+  priority        Int      @default(0)
+  active          Boolean  @default(true)
+  showCount       Int      @default(0) @map("show_count")
+  clickCount      Int      @default(0) @map("click_count")
+  purchaseCount   Int      @default(0) @map("purchase_count")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@index([active, placement])
+  @@map("upsell_rules")
+}
+
+// =========================================================
+//                     PRODUCT REVIEWS
+// =========================================================
+
+model ProductReview {
+  id              Int      @id @default(autoincrement())
+  shopifyProductId String  @map("shopify_product_id")
+  productTitle    String   @map("product_title")
+  customerName    String   @map("customer_name")
+  customerEmail   String?  @map("customer_email")
+  rating          Int
+  title           String?
+  content         String   @db.Text
+  // JSON array of image data URLs / URLs
+  images          String?  @db.Text
+  // status: PENDING / APPROVED / REJECTED / SPAM
+  status          String   @default("PENDING")
+  // AI ozet
+  aiSummary       String?  @map("ai_summary") @db.Text
+  // AI spam skoru 0-100
+  aiSpamScore     Int?     @map("ai_spam_score")
+  helpfulCount    Int      @default(0) @map("helpful_count")
+  rejectionReason String?  @map("rejection_reason")
+  createdAt       DateTime @default(now()) @map("created_at")
+  reviewedAt      DateTime? @map("reviewed_at")
+
+  @@index([shopifyProductId])
+  @@index([status])
+  @@map("product_reviews")
+}
+
+// =========================================================
+//                     E-INVOICE (e-Fatura)
+// =========================================================
+
+model EInvoice {
+  id              Int      @id @default(autoincrement())
+  // Shopify siparis GID
+  orderId         String   @map("order_id")
+  orderName       String   @map("order_name")
+  // invoiceType: EARSIV (TCKN bireysel) / EFATURA (VKN kurumsal)
+  invoiceType     String   @map("invoice_type")
+  // Musteri vergi bilgisi (VKN veya TCKN)
+  taxId           String?  @map("tax_id")
+  taxOffice       String?  @map("tax_office")
+  customerName    String   @map("customer_name")
+  customerAddress String   @map("customer_address") @db.Text
+  totalAmount     Decimal  @db.Decimal(12, 2) @map("total_amount")
+  taxAmount       Decimal  @db.Decimal(12, 2) @map("tax_amount")
+  currency        String   @default("TRY")
+  // Fatura sira no
+  invoiceNumber   String?  @unique @map("invoice_number")
+  // status: DRAFT / SENT / APPROVED / REJECTED / CANCELLED / ERROR
+  status          String   @default("DRAFT")
+  // GIB UUID
+  gibUuid         String?  @map("gib_uuid")
+  pdfUrl          String?  @map("pdf_url")
+  xmlContent      String?  @map("xml_content") @db.Text
+  errorMsg        String?  @map("error_msg")
+  // Yeni alanlar
+  providerId      Int?     @map("provider_id")
+  cancelledAt     DateTime? @map("cancelled_at")
+  cancelReason    String?  @map("cancel_reason")
+  emailSentAt     DateTime? @map("email_sent_at")
+  createdAt       DateTime @default(now()) @map("created_at")
+  sentAt          DateTime? @map("sent_at")
+
+  @@index([orderId])
+  @@index([invoiceType, status])
+  @@map("einvoices")
+}
+
+// =========================================================
+//             PANEL ICI MESAJLASMA & GOREV
+// =========================================================
+
+// type: dm (birebir) / channel (genel sirket kanali) / task (gorev)
+model Conversation {
+  id             Int       @id @default(autoincrement())
+  type           String    @default("dm")
+  title          String?
+  createdById    Int       @map("created_by_id")
+  taskStatus     String?   @map("task_status")   // OPEN / IN_PROGRESS / DONE
+  taskAssigneeId Int?      @map("task_assignee_id")
+  taskDueAt      DateTime? @map("task_due_at")
+  lastMessageAt  DateTime? @map("last_message_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  participants ConversationParticipant[]
+  messages     Message[]
+  @@map("conversations")
+}
+
+model ConversationParticipant {
+  id             Int       @id @default(autoincrement())
+  conversationId Int       @map("conversation_id")
+  userId         Int       @map("user_id")
+  lastReadAt     DateTime? @map("last_read_at")
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  @@unique([conversationId, userId])
+  @@index([userId])
+  @@map("conversation_participants")
+}
+
+model Message {
+  id             Int      @id @default(autoincrement())
+  conversationId Int      @map("conversation_id")
+  senderId       Int      @map("sender_id")
+  body           String   @db.Text
+  fileData       String?  @db.Text @map("file_data")  // base64 data URL
+  fileName       String?  @map("file_name")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  @@index([conversationId])
+  @@map("messages_internal")
+}
+
+// Storefront canli sepet takibi (cart-tracker.js beacon).
+// Uye musterinin sepetini email/customerId ile esleyip panelde gosteririz.
+model CartSession {
+  id            String   @id          // sepet token'i
+  customerEmail String?  @map("customer_email")
+  customerId    String?  @map("customer_id")
+  items         String?  @db.Text     // JSON: [{title, quantity, price, image, sku}]
+  itemCount     Int      @default(0) @map("item_count")
+  total         Float    @default(0)
+  currency      String   @default("TRY")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@index([customerEmail])
+  @@index([updatedAt])
+  @@map("cart_sessions")
+}
+
+// =========================================================
+//        CUSTOMER DASHBOARD — Çoklu Magaza (Multi-tenant)
+// =========================================================
+
+model Store {
+  id              Int       @id @default(autoincrement())
+  // Insan-okunabilir kimlik (storefront URL'lerinde kullanilir).
+  slug            String    @unique
+  name            String
+  // Ornek: "magaza.myshopify.com" veya "www.magaza.com"
+  shopifyDomain   String    @unique @map("shopify_domain")
+  // Custom domain (varsa); App Proxy bu domain uzerinden gelir.
+  customDomain    String?   @map("custom_domain")
+  // Sifreli sakli: Admin API token + App Proxy shared secret + Customer Account API client.
+  // JSON: { adminToken, apiKey, apiSecret, proxySecret, customerAccountClientId, customerAccountClientSecret }
+  config          String?   @db.Text
+  status          String    @default("active") // active / paused / setup
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  theme           StoreTheme?
+  content         StoreContent?
+  pages           StorePage[]
+  customerActivity CustomerActivity[]
+
+  @@map("stores")
+}
+
+model StoreTheme {
+  id               Int      @id @default(autoincrement())
+  storeId          Int      @unique @map("store_id")
+  logoUrl          String?  @db.Text @map("logo_url")
+  primaryColor     String   @default("#111111") @map("primary_color")
+  secondaryColor   String   @default("#2563EB") @map("secondary_color")
+  bgColor          String   @default("#FFFFFF") @map("bg_color")
+  textColor        String   @default("#111111") @map("text_color")
+  fontFamily       String   @default("Inter") @map("font_family")
+  borderRadius     Int      @default(8) @map("border_radius")
+  // Ekstra: ozel CSS, custom theme JSON
+  customCss        String?  @db.Text @map("custom_css")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  @@map("store_themes")
+}
+
+model StoreContent {
+  id              Int      @id @default(autoincrement())
+  storeId         Int      @unique @map("store_id")
+  topBannerText   String?  @db.Text @map("top_banner_text")
+  welcomeTemplate String   @default("Welcome, {name}!") @map("welcome_template")
+  kvkkText        String?  @db.Text @map("kvkk_text")
+  termsText       String?  @db.Text @map("terms_text")
+  // Hangi tab'lar gosterilsin (JSON: {profile:true, orders:true, addresses:true, recent:true, top:true})
+  visibleTabs     String?  @db.Text @map("visible_tabs")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  @@map("store_content")
+}
+
+// Aktif/pasif sayfa + her sayfa icin ozel baslik/aciklama.
+model StorePage {
+  id          Int      @id @default(autoincrement())
+  storeId     Int      @map("store_id")
+  // 'login' / 'register' / 'reset' / 'account' / 'orders' / 'addresses' / 'recent' / 'top'
+  pageKey     String   @map("page_key")
+  enabled     Boolean  @default(true)
+  title       String?
+  description String?  @db.Text
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  @@unique([storeId, pageKey])
+  @@map("store_pages")
+}
+
+// Storefront musteri oturumu (Customer Account API OAuth + session).
+model StorefrontSession {
+  id           String   @id           // opaque session token (cookie'de)
+  storeId      Int      @map("store_id")
+  customerId   String?  @map("customer_id")
+  accessToken  String?  @db.Text @map("access_token")   // Shopify Customer Account access token (sifrelenmis)
+  refreshToken String?  @db.Text @map("refresh_token")
+  expiresAt    DateTime? @map("expires_at")
+  // Recently viewed icin urun GID listesi (JSON array of strings, max 50)
+  recentViewed String?  @db.Text @map("recent_viewed")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@index([storeId, customerId])
+  @@index([updatedAt])
+  @@map("storefront_sessions")
+}
+
+// Storefront tarafindan kaydedilen aktivite (recently viewed vb.).
+model CustomerActivity {
+  id           Int      @id @default(autoincrement())
+  storeId      Int      @map("store_id")
+  customerId   String?  @map("customer_id")  // Shopify numeric id
+  sessionToken String?  @map("session_token")
+  // 'view' / 'cart' / 'order'
+  type         String
+  // Product gid veya identifier
+  ref          String
+  meta         String?  @db.Text
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  @@index([storeId, customerId])
+  @@index([storeId, type])
+  @@map("customer_activity")
+}
+
+// =========================================================
+//             MUSTERI SADAKAT PUAN SISTEMI
+// =========================================================
+
+model LoyaltySetting {
+  id                Int      @id @default(autoincrement())
+  enabled           Boolean  @default(true)
+  pointsPerCurrency Float    @default(1)    @map("points_per_currency") // kac puan / 1 birim harcama
+  redeemValue       Float    @default(0.1)  @map("redeem_value")        // 1 puan = kac TL indirim
+  minRedeem         Int      @default(100)  @map("min_redeem")
+  signupBonus       Int      @default(0)    @map("signup_bonus")
+  silverThreshold   Int      @default(1000) @map("silver_threshold")    // toplam kazanilan puan
+  goldThreshold     Int      @default(5000) @map("gold_threshold")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  @@map("loyalty_settings")
+}
+
+model LoyaltyAccount {
+  id                Int      @id @default(autoincrement())
+  shopifyCustomerId String   @unique @map("shopify_customer_id")  // numeric id
+  email             String?
+  customerName      String?  @map("customer_name")
+  balance           Int      @default(0)
+  totalEarned       Int      @default(0) @map("total_earned")
+  totalRedeemed     Int      @default(0) @map("total_redeemed")
+  tier              String   @default("BRONZE")  // BRONZE / SILVER / GOLD
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  transactions LoyaltyTransaction[]
+  @@index([balance])
+  @@map("loyalty_accounts")
+}
+
+model LoyaltyTransaction {
+  id        Int      @id @default(autoincrement())
+  accountId Int      @map("account_id")
+  type      String   // EARN / REDEEM / ADJUST / SIGNUP
+  points    Int      // +/-
+  reason    String?
+  orderId   String?  @map("order_id")
+  orderName String?  @map("order_name")
+  code      String?  // redeem'de uretilen kupon kodu
+  createdAt DateTime @default(now()) @map("created_at")
+
+  account LoyaltyAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  @@index([accountId])
+  @@map("loyalty_transactions")
+}
+
+// Siparis hazirlik/kargo is akisi durumu (bizim kontrol ettigimiz).
+// status: NEW (yeni) / PREPARED (faturalandi-hazirlandi) / SHIPPED (kargoya verildi)
+model OrderWorkflow {
+  id             Int       @id @default(autoincrement())
+  orderId        String    @unique @map("order_id")
+  orderName      String?   @map("order_name")
+  status         String    @default("NEW")
+  invoiced       Boolean   @default(false)
+  invoicedAt     DateTime? @map("invoiced_at")
+  preparedAt     DateTime? @map("prepared_at")
+  shippedAt      DateTime? @map("shipped_at")
+  carrier        String?
+  trackingNumber String?   @map("tracking_number")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  @@map("order_workflows")
+}
+
+// e-Fatura servis saglayici (GIB dogrudan / ozel entegrator).
+// config: AES ile sifreli JSON credential.
+model EfaturaProvider {
+  id           Int      @id @default(autoincrement())
+  name         String
+  type         String   @default("GIB")   // GIB / NILVERA / LOGO ...
+  enabled      Boolean  @default(true)
+  mode         String   @default("sandbox") // sandbox / live
+  config       String?  @db.Text
+  invoiceTypes String   @default("EFATURA,EARSIV") @map("invoice_types")
+  isDefault    Boolean  @default(false) @map("is_default")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@map("efatura_providers")
+}
+
+// Fatura islem/hata loglari.
+model InvoiceLog {
+  id        Int      @id @default(autoincrement())
+  invoiceId Int?     @map("invoice_id")
+  orderId   String?  @map("order_id")
+  level     String   @default("info") // info / error
+  action    String
+  message   String   @db.Text
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([invoiceId])
+  @@map("invoice_logs")
+}
+
+// DB-tabanli is kuyrugu (BullMQ yerine cron isler).
+model InvoiceJob {
+  id          Int      @id @default(autoincrement())
+  type        String   // create / cancel / email
+  payload     String   @db.Text
+  status      String   @default("PENDING") // PENDING / PROCESSING / DONE / FAILED
+  attempts    Int      @default(0)
+  maxAttempts Int      @default(3) @map("max_attempts")
+  lastError   String?  @db.Text @map("last_error")
+  scheduledAt DateTime @default(now()) @map("scheduled_at")
+  processedAt DateTime? @map("processed_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([status, scheduledAt])
+  @@map("invoice_jobs")
+}
+
+// =========================================================
+//                     INSTALLMENT (Taksit)
+// =========================================================
+
+model InstallmentSetting {
+  id                  Int      @id @default(autoincrement())
+  bankCode            String   @unique @map("bank_code")     // "garanti", "isbank" vb.
+  bankName            String   @map("bank_name")
+  cardFamily          String   @map("card_family")            // "Bonus", "Maximum"
+  // Hangi taksitler aktif (JSON object, count -> bool)
+  enabledInstallments Json     @map("enabled_installments")
+  // Komisyon yuzdesi (JSON object, count -> percent)
+  commissionRates     Json     @map("commission_rates")
+  minAmount           Decimal? @db.Decimal(10, 2) @map("min_amount")
+  active              Boolean  @default(true)
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  @@map("installment_settings")
+}
+
+// =========================================================
+//                 MARKETING AUTOMATION
+// =========================================================
+
+model AutomationFlow {
+  id           Int      @id @default(autoincrement())
+  name         String
+  // trigger: abandoned_cart / welcome / post_purchase / winback / birthday
+  trigger      String
+  // channel: EMAIL / SMS
+  channel      String   @default("EMAIL")
+  enabled      Boolean  @default(false)
+  // Tetikten kac saat sonra gonderilsin
+  delayHours   Int      @default(1) @map("delay_hours")
+  subject      String?
+  bodyTemplate String?  @db.Text @map("body_template")
+  discountCode String?  @map("discount_code")
+  lastRunAt    DateTime? @map("last_run_at")
+  sentCount    Int      @default(0) @map("sent_count")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@index([trigger])
+  @@map("automation_flows")
+}
+
+// =========================================================
+//                   STOREFRONT POPUP
+// =========================================================
+
+model Popup {
+  id           Int      @id @default(autoincrement())
+  name         String
+  enabled      Boolean  @default(false)
+  headline     String
+  description  String?  @db.Text
+  buttonText   String   @default("Kupon Al") @map("button_text")
+  discountCode String?  @map("discount_code")
+  imageUrl     String?  @map("image_url") @db.Text
+  // trigger: delay / exit_intent / scroll
+  triggerType  String   @default("delay") @map("trigger_type")
+  // saniye (delay) veya yuzde (scroll)
+  triggerValue Int      @default(5) @map("trigger_value")
+  // frequency: once / session / always
+  frequency    String   @default("once")
+  // position: center / bottom-right
+  position     String   @default("center")
+  theme        String   @default("light")
+  collectEmail Boolean  @default(true) @map("collect_email")
+  views        Int      @default(0)
+  conversions  Int      @default(0)
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  leads        PopupLead[]
+
+  @@map("popups")
+}
+
+model PopupLead {
+  id        Int      @id @default(autoincrement())
+  popupId   Int      @map("popup_id")
+  email     String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  popup     Popup    @relation(fields: [popupId], references: [id], onDelete: Cascade)
+
+  @@index([popupId])
+  @@map("popup_leads")
+}
+
+// Storefront canli ziyaretci takibi (kendi beacon'imiz).
+// tracker.js her ~20 sn'de bir ping atar; son N dakikadaki kayitlar "aktif" sayilir.
+model VisitorSession {
+  // istemci tarafinda uretilen oturum token'i
+  id        String   @id
+  path      String?  @db.Text
+  referrer  String?  @db.Text
+  userAgent String?  @map("user_agent") @db.Text
+  firstSeen DateTime @default(now()) @map("first_seen")
+  lastSeen  DateTime @default(now()) @updatedAt @map("last_seen")
+
+  @@index([lastSeen])
+  @@map("visitor_sessions")
+}
+
+// Pazaryeri repricing / buybox otomasyon kurali.
+// strategy: match_buybox (buybox fiyatina esitle) / beat_by (buybox - beatAmount) / fixed
+model RepricingRule {
+  id          Int       @id @default(autoincrement())
+  marketplace String
+  sku         String?   // null = tum urunler (genel kural)
+  enabled     Boolean   @default(true)
+  strategy    String    @default("match_buybox")
+  beatAmount  Float?    @map("beat_amount")
+  fixedPrice  Float?    @map("fixed_price")
+  minPrice    Float?    @map("min_price")
+  maxPrice    Float?    @map("max_price")
+  lastRunAt   DateTime? @map("last_run_at")
+  lastAction  String?   @map("last_action") @db.Text
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  @@index([marketplace])
+  @@map("repricing_rules")
+}
+
+// Genel uygulama ayarlari (API anahtarlari vb.) — runtime'da panelden degistirilebilir.
+// getSetting() DB'yi okur, yoksa process.env'e duser.
+model AppSetting {
+  key       String   @id
+  value     String?  @db.Text
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("app_settings")
+}
+
+// =========================================================
+//                  PAZARYERI ENTEGRASYONU
+// =========================================================
+
+// Her pazaryeri icin baglanti/kimlik ayarlari.
+// marketplace: TRENDYOL / HEPSIBURADA / AMAZON / ETSY
+model MarketplaceIntegration {
+  id            Int       @id @default(autoincrement())
+  marketplace   String    @unique
+  enabled       Boolean   @default(false)
+  apiKey        String?   @map("api_key") @db.Text
+  apiSecret     String?   @map("api_secret") @db.Text
+  sellerId      String?   @map("seller_id")   // Trendyol supplierId / Amazon sellerId / Etsy shopId
+  extra         String?   @db.Text            // JSON: token, region, marketplaceId vb.
+  autoStock     Boolean   @default(true) @map("auto_stock")
+  autoPrice     Boolean   @default(true) @map("auto_price")
+  status        String    @default("DISCONNECTED") // CONNECTED / DISCONNECTED / ERROR
+  statusMessage String?   @map("status_message") @db.Text
+  lastSyncAt    DateTime? @map("last_sync_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  @@map("marketplace_integrations")
+}
+
+// Shopify urunu <-> pazaryeri eslemesi + buybox durumu.
+model MarketplaceListing {
+  id                Int       @id @default(autoincrement())
+  marketplace       String
+  shopifyProductId  String?   @map("shopify_product_id")
+  sku               String?
+  barcode           String?
+  title             String?
+  marketplaceItemId String?   @map("marketplace_item_id")
+  price             Float?
+  stock             Int?
+  status            String    @default("PENDING") // PENDING / LISTED / PASSIVE / ERROR
+  // buybox alanlari
+  buyboxWinner      Boolean?  @map("buybox_winner")
+  buyboxPrice       Float?    @map("buybox_price")
+  ourPrice          Float?    @map("our_price")
+  sellerCount       Int?      @map("seller_count")
+  buyboxCheckedAt   DateTime? @map("buybox_checked_at")
+  lastSyncAt        DateTime? @map("last_sync_at")
+  createdAt         DateTime  @default(now()) @map("created_at")
+
+  @@unique([marketplace, sku])
+  @@index([marketplace])
+  @@map("marketplace_listings")
+}
+
+// Pazaryerinden cekilen siparisler.
+model MarketplaceOrder {
+  id           Int       @id @default(autoincrement())
+  marketplace  String
+  orderNumber  String    @map("order_number")
+  status       String?
+  customerName String?   @map("customer_name")
+  total        Float?
+  currency     String?   @default("TRY")
+  lineCount    Int?      @map("line_count")
+  raw          String?   @db.Text
+  orderedAt    DateTime? @map("ordered_at")
+  fetchedAt    DateTime  @default(now()) @map("fetched_at")
+
+  @@unique([marketplace, orderNumber])
+  @@index([marketplace])
+  @@map("marketplace_orders")
+}
