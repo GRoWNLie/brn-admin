@@ -46,8 +46,12 @@ export async function verifyAppProxy(req: NextRequest, storeId: number): Promise
     } catch { signatureValid = false }
   }
 
-  if (isProd && !signatureValid) {
+  // Secret tanımlıysa doğrulama zorunlu, değilse (henüz girilmemişse) izin ver (setup modu).
+  if (isProd && secret && !signatureValid) {
     return NextResponse.json({ success: false, message: 'Invalid App Proxy signature' }, { status: 401 })
+  }
+  if (isProd && !secret) {
+    console.warn(`[app-proxy] store ${storeId}: proxySecret tanımlı değil — signature kontrolü atlandı.`)
   }
 
   return {
