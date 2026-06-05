@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { requirePermission } from '@/lib/auth'
 import { logAuditAuto } from '@/lib/audit'
+import { invalidateStoreCache } from '@/lib/store-cache'
 
 const ALLOWED = ['topBannerText', 'welcomeTemplate', 'kvkkText', 'termsText']
 

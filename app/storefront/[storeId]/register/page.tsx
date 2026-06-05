@@ -2,18 +2,36 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { useParams } from 'next/navigation'
+import { useParams, useRouter } from 'next/navigation'
 
 export default function StorefrontRegister() {
   const { storeId } = useParams<{ storeId: string }>()
+  const router = useRouter()
   const base = `/storefront/${storeId}`
   const [form, setForm] = useState({ firstName: '', lastName: '', email: '', phone: '', password: '', kvkk: false, marketing: false })
-  const [msg, setMsg] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
   function set(k: string, v: any) { setForm(p => ({ ...p, [k]: v })) }
-  function submit(e: React.FormEvent) {
+
+  async function submit(e: React.FormEvent) {
     e.preventDefault()
-    if (!form.kvkk) { setMsg('KVKK onayı zorunlu'); return }
-    setMsg('🔒 Kayıt Customer Account API ile bağlanacak (Faz 3).')
+    if (!form.kvkk) { setMsg({ ok: false, text: 'KVKK onayı zorunludur' }); return }
+    setBusy(true); setMsg(null)
+    try {
+      const res = await fetch(`/api/storefront/${storeId}/register`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(form),
+      })
+      const d = await res.json()
+      if (d.success) {
+        setMsg({ ok: true, text: '✓ Hesap oluşturuldu — yönlendiriliyorsun...' })
+        setTimeout(() => router.push(`${base}/account`), 700)
+      } else {
+        setMsg({ ok: false, text: d.message || 'Kayıt başarısız' })
+      }
+    } catch (e: any) {
+      setMsg({ ok: false, text: e?.message || 'Bağlantı hatası' })
+    } finally { setBusy(false) }
   }
   return (
     <div style={{ maxWidth: 480, margin: '40px auto' }}>
@@ -27,10 +45,10 @@ export default function StorefrontRegister() {
         </div>
         <label className="sf-label" style={{ marginTop: 12 }}>E-posta</label>
         <input className="sf-input" type="email" required value={form.email} onChange={e => set('email', e.target.value)} />
-        <label className="sf-label" style={{ marginTop: 12 }}>Telefon (opsiyonel)</label>
-        <input className="sf-input" value={form.phone} onChange={e => set('phone', e.target.value)} placeholder="+90..." />
-        <label className="sf-label" style={{ marginTop: 12 }}>Şifre</label>
-        <input className="sf-input" type="password" required value={form.password} onChange={e => set('password', e.target.value)} />
+        <label className="sf-label" style={{ marginTop: 12 }}>Telefon (SMS için)</label>
+        <input className="sf-input" value={form.phone} onChange={e => set('phone', e.target.value)} placeholder="+90 5XX XXX XX XX" inputMode="tel" />
+        <label className="sf-label" style={{ marginTop: 12 }}>Şifre (en az 6 karakter)</label>
+        <input className="sf-input" type="password" required minLength={6} value={form.password} onChange={e => set('password', e.target.value)} />
 
         <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginTop: 14, fontSize: 13 }}>
           <input type="checkbox" checked={form.kvkk} onChange={e => set('kvkk', e.target.checked)} />
@@ -38,11 +56,20 @@ export default function StorefrontRegister() {
         </label>
         <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginTop: 8, fontSize: 13 }}>
           <input type="checkbox" checked={form.marketing} onChange={e => set('marketing', e.target.checked)} />
-          <span>Haberler ve özel tekliflerden haberdar olmak istiyorum.</span>
+          <span>E-posta ve SMS ile kampanya/teklif almak istiyorum.</span>
         </label>
 
-        {msg && <div style={{ marginTop: 12, padding: 10, borderRadius: 'var(--sf-radius)', background: 'rgba(37,99,235,.08)', color: 'var(--sf-secondary)', fontSize: 13 }}>{msg}</div>}
-        <button type="submit" className="sf-btn" style={{ width: '100%', marginTop: 16 }}>Hesap Oluştur</button>
+        {msg && (
+          <div style={{
+            marginTop: 12, padding: 10, borderRadius: 'var(--sf-radius)', fontSize: 13,
+            background: msg.ok ? 'rgba(5,150,105,.1)' : 'rgba(220,38,38,.1)',
+            color: msg.ok ? '#059669' : '#DC2626',
+          }}>{msg.ok ? '✓ ' : '✕ '}{msg.text}</div>
+        )}
+
+        <button type="submit" className="sf-btn" style={{ width: '100%', marginTop: 16 }} disabled={busy}>
+          {busy ? 'Hesap oluşturuluyor...' : 'Hesap Oluştur'}
+        </button>
       </form>
 
       <div style={{ textAlign: 'center', fontSize: 13, marginTop: 14 }}>

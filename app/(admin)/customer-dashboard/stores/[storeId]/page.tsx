@@ -86,6 +86,7 @@ export default function StoreDetailPage() {
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           {savedMsg && <span style={{ fontSize: 13, color: '#059669' }}>{savedMsg}</span>}
           <a href={`/storefront/${storeId}/login`} target="_blank" rel="noreferrer" className="btn-secondary" style={{ textDecoration: 'none' }}>🔗 Storefront Önizle</a>
+          <Link href={`/customer-dashboard/stores/${storeId}/analytics`} className="btn-secondary" style={{ textDecoration: 'none' }}>📊 Analitik</Link>
           <button className="btn-secondary" style={{ color: '#DC2626' }} onClick={deleteStore}>🗑 Sil</button>
         </div>
       </div>

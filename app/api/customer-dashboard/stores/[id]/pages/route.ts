@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { requirePermission } from '@/lib/auth'
 import { logAuditAuto } from '@/lib/audit'
+import { invalidateStoreCache } from '@/lib/store-cache'
 import { PAGE_KEYS } from '@/lib/customer-dashboard'
 
 // PATCH /api/customer-dashboard/stores/[id]/pages
@@ -24,6 +25,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       update: data,
     })
   }
+  invalidateStoreCache(storeId)
   await logAuditAuto('store.pages', { req, resource: `store:${storeId}`, detail: { count: updates.length } })
   const pages = await prisma.storePage.findMany({ where: { storeId }, orderBy: { pageKey: 'asc' } })
   return NextResponse.json({ success: true, pages })

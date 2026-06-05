@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { requirePermission } from '@/lib/auth'
 import { logAuditAuto } from '@/lib/audit'
+import { invalidateStoreCache } from '@/lib/store-cache'
 import { maskStore, updateStoreConfig } from '@/lib/customer-dashboard'
 
 // GET /api/customer-dashboard/stores/[id] — tek mağaza (tema + içerik + sayfalar dahil)
@@ -49,6 +50,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
   if (error) return error
   const id = Number(params.id)
   await prisma.store.delete({ where: { id } })
+  invalidateStoreCache(id)
   await logAuditAuto('store.delete', { resource: `store:${id}` })
   return NextResponse.json({ success: true })
 }

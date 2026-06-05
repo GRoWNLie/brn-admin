@@ -1,49 +1,77 @@
 'use client'
 
-import { useParams } from 'next/navigation'
+import { useEffect, useState } from 'react'
+import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 
-// Faz 3: Customer Account API'den gerçek müşteri verisi çekilecek.
-// Şimdilik temayı ve içeriği gösteren iskelet.
 export default function StorefrontAccount() {
   const { storeId } = useParams<{ storeId: string }>()
+  const router = useRouter()
   const base = `/storefront/${storeId}`
-  const customer = { firstName: 'Misafir', lastName: '', email: 'demo@example.com', phone: '—', defaultAddress: 'Adres bilgisi yok' }
+  const [data, setData] = useState<any>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    fetch(`/api/storefront/${storeId}/me?include=orders`).then(async r => {
+      if (r.status === 401) { router.push(`${base}/login`); return }
+      const d = await r.json()
+      if (d.success) setData(d)
+      setLoading(false)
+    }).catch(() => setLoading(false))
+  }, [storeId, router, base])
+
+  async function logout() {
+    await fetch(`/api/storefront/${storeId}/logout`, { method: 'POST' })
+    router.push(`${base}/login`)
+  }
+
+  if (loading) return <div className="sf-card"><div className="sf-muted">⏳ Yükleniyor...</div></div>
+  if (!data?.customer) return null
+  const c = data.customer
+  const lastOrder = data.orders?.[0]
 
   return (
     <div>
-      <h1 className="sf-h1">Hoş geldin, {customer.firstName}!</h1>
-      <p className="sf-muted">Hesap özeti ve hızlı erişim.</p>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
+        <div>
+          <h1 className="sf-h1">Hoş geldin, {c.firstName}!</h1>
+          <p className="sf-muted">Hesap özeti ve hızlı erişim.</p>
+        </div>
+        <button onClick={logout} className="sf-btn-secondary">Çıkış</button>
+      </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(280px,1fr))', gap: 14, marginTop: 16 }}>
         <div className="sf-card">
           <h2 className="sf-h2">👤 Hesap Bilgileri</h2>
           <div style={{ fontSize: 13, lineHeight: 1.8 }}>
-            <div><strong>{customer.firstName} {customer.lastName}</strong></div>
-            <div>📧 {customer.email}</div>
-            <div>📞 {customer.phone}</div>
+            <div><strong>{c.firstName} {c.lastName}</strong></div>
+            <div>📧 {c.email}</div>
+            <div>📞 {c.phone || '—'}</div>
           </div>
-          <Link href={`${base}/account/edit`} className="sf-btn-secondary" style={{ display: 'inline-block', marginTop: 12, textDecoration: 'none' }}>Düzenle</Link>
         </div>
+
         <div className="sf-card">
           <h2 className="sf-h2">🏠 Varsayılan Adres</h2>
-          <div style={{ fontSize: 13, lineHeight: 1.7 }}>{customer.defaultAddress}</div>
+          {c.defaultAddress ? (
+            <div style={{ fontSize: 13, lineHeight: 1.7 }}>
+              {c.defaultAddress.address1}<br />
+              {c.defaultAddress.zip} {c.defaultAddress.city} / {c.defaultAddress.province}<br />
+              {c.defaultAddress.country}
+            </div>
+          ) : <div className="sf-muted" style={{ fontSize: 13 }}>Adres yok</div>}
           <Link href={`${base}/addresses`} className="sf-btn-secondary" style={{ display: 'inline-block', marginTop: 12, textDecoration: 'none' }}>Adreslerim</Link>
         </div>
+
         <div className="sf-card">
           <h2 className="sf-h2">🛒 Son Sipariş</h2>
-          <div className="sf-muted" style={{ fontSize: 13 }}>Henüz sipariş yok.</div>
+          {lastOrder ? (
+            <div style={{ fontSize: 13, lineHeight: 1.7 }}>
+              <strong>{lastOrder.name}</strong> · {new Date(lastOrder.createdAt).toLocaleDateString('tr-TR')}<br />
+              {lastOrder.lineCount} ürün · <strong>{parseFloat(lastOrder.total).toLocaleString('tr-TR', { minimumFractionDigits: 2 })} {lastOrder.currency}</strong>
+            </div>
+          ) : <div className="sf-muted" style={{ fontSize: 13 }}>Henüz sipariş yok.</div>}
           <Link href={`${base}/orders`} className="sf-btn-secondary" style={{ display: 'inline-block', marginTop: 12, textDecoration: 'none' }}>Tüm Siparişler</Link>
         </div>
-      </div>
-
-      <div className="sf-card" style={{ marginTop: 18, background: 'rgba(37,99,235,.06)', borderColor: 'rgba(37,99,235,.25)' }}>
-        <h2 className="sf-h2">⚠️ Faz 2 (İskelet) — Faz 3'te Doldurulacak</h2>
-        <ul style={{ fontSize: 13, margin: '6px 0 0 18px', lineHeight: 1.7 }}>
-          <li>Shopify Customer Account API ile gerçek hesap bilgileri</li>
-          <li>Siparişler ve adresler canlı veri</li>
-          <li>"Recently viewed" ve "Top ordered" ürünler</li>
-        </ul>
       </div>
     </div>
   )

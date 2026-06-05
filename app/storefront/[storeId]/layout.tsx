@@ -1,6 +1,7 @@
 import { headers } from 'next/headers'
 import { prisma } from '@/lib/prisma'
 import StorefrontShell from './StorefrontShell'
+import { getCachedStore, setCachedStore } from '@/lib/store-cache'
 
 export const dynamic = 'force-dynamic'
 
@@ -14,10 +15,14 @@ export default async function StorefrontLayout({
   children, params,
 }: { children: React.ReactNode; params: { storeId: string } }) {
   const storeId = Number(params.storeId)
-  const store = await prisma.store.findUnique({
-    where: { id: storeId },
-    include: { theme: true, content: true, pages: { orderBy: { pageKey: 'asc' } } },
-  })
+  let store: any = getCachedStore(storeId)
+  if (!store) {
+    store = await prisma.store.findUnique({
+      where: { id: storeId },
+      include: { theme: true, content: true, pages: { orderBy: { pageKey: 'asc' } } },
+    })
+    if (store) setCachedStore(storeId, store)
+  }
 
   if (!store) {
     return <div style={{ padding: 40, fontFamily: 'system-ui' }}>Mağaza bulunamadı.</div>
@@ -39,7 +44,7 @@ export default async function StorefrontLayout({
       termsText: store.content.termsText,
       visibleTabs,
     } : null,
-    pages: store.pages.map(p => ({ pageKey: p.pageKey, enabled: p.enabled, title: p.title })),
+    pages: store.pages.map((p: any) => ({ pageKey: p.pageKey, enabled: p.enabled, title: p.title })),
   }
 
   // Forwarded host (App Proxy üzerinden bilinmesi için, izleme amaçlı)

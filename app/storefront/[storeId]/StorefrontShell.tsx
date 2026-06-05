@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import { useEffect, useState } from 'react'
 import { useParams, usePathname } from 'next/navigation'
 
 const TAB_LINKS = [
@@ -23,6 +24,17 @@ export default function StorefrontShell({ config, forwardedHost, children }: {
   const isAuthPage = ['/login', '/register', '/reset'].some(p => pathname?.endsWith(p))
 
   const base = `/storefront/${storeId}`
+
+  // Çerez bildirimi (KVKK)
+  const [cookieAck, setCookieAck] = useState(true)
+  const [modalOpen, setModalOpen] = useState<null | 'kvkk' | 'terms'>(null)
+  useEffect(() => {
+    try { setCookieAck(localStorage.getItem(`sf_cookie_${storeId}`) === '1') } catch {}
+  }, [storeId])
+  function ackCookies() {
+    try { localStorage.setItem(`sf_cookie_${storeId}`, '1') } catch {}
+    setCookieAck(true)
+  }
 
   return (
     <div className="sf-root">
@@ -60,7 +72,7 @@ export default function StorefrontShell({ config, forwardedHost, children }: {
           .sf-btn { background: var(--sf-primary); color: #fff; border: none; padding: 11px 22px; border-radius: var(--sf-radius); font-weight: 600; cursor: pointer; font-size: 14px; }
           .sf-btn:hover { opacity: .92; }
           .sf-btn-secondary { background: transparent; color: var(--sf-secondary); border: 1px solid var(--sf-secondary); padding: 10px 20px; border-radius: var(--sf-radius); font-weight: 600; cursor: pointer; font-size: 14px; }
-          .sf-input { width: 100%; padding: 11px 14px; border-radius: var(--sf-radius); border: 1px solid var(--sf-border); background: var(--sf-bg); color: var(--sf-text); font-size: 14px; outline: none; }
+          .sf-input { width: 100%; padding: 11px 14px; border-radius: var(--sf-radius); border: 1px solid var(--sf-border); background: var(--sf-bg); color: var(--sf-text); font-size: 16px; outline: none; }
           .sf-input:focus { border-color: var(--sf-secondary); }
           .sf-label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; }
           .sf-row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
@@ -102,8 +114,54 @@ export default function StorefrontShell({ config, forwardedHost, children }: {
         <main className="sf-main">{children}</main>
 
         <footer className="sf-footer">
-          © {new Date().getFullYear()} {config.name} · Customer Dashboard{forwardedHost ? ` · ${forwardedHost}` : ''}
+          <div>© {new Date().getFullYear()} {config.name}</div>
+          <div style={{ marginTop: 6, display: 'flex', gap: 14, justifyContent: 'center', flexWrap: 'wrap' }}>
+            {config.content?.kvkkText && (
+              <button onClick={() => setModalOpen('kvkk')} style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', textDecoration: 'underline', fontSize: 12 }}>KVKK Aydınlatma</button>
+            )}
+            {config.content?.termsText && (
+              <button onClick={() => setModalOpen('terms')} style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', textDecoration: 'underline', fontSize: 12 }}>Hizmet Şartları</button>
+            )}
+            <a href={`mailto:privacy@${config.slug}.com?subject=Verilerimi Sil`} style={{ color: 'inherit', textDecoration: 'underline', fontSize: 12 }}>Verilerimi Sil</a>
+          </div>
         </footer>
+
+        {!cookieAck && (
+          <div style={{
+            position: 'fixed', left: 16, right: 16, bottom: 16, zIndex: 60,
+            background: 'var(--sf-text)', color: 'var(--sf-bg)', borderRadius: 'var(--sf-radius)',
+            padding: '14px 18px', display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap',
+            boxShadow: '0 8px 32px rgba(0,0,0,.25)',
+          }}>
+            <div style={{ flex: 1, fontSize: 13, minWidth: 220 }}>
+              🍪 Bu site deneyimini iyileştirmek için çerez kullanır. Devam ederek kabul etmiş olursun.
+            </div>
+            <button onClick={ackCookies} style={{
+              background: 'var(--sf-secondary)', color: '#fff', border: 'none',
+              padding: '10px 18px', borderRadius: 'var(--sf-radius)', fontWeight: 600, cursor: 'pointer',
+            }}>Anladım</button>
+          </div>
+        )}
+
+        {modalOpen && (
+          <div onClick={() => setModalOpen(null)} style={{
+            position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', zIndex: 70,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
+          }}>
+            <div onClick={e => e.stopPropagation()} style={{
+              background: 'var(--sf-bg)', color: 'var(--sf-text)', borderRadius: 'var(--sf-radius)',
+              padding: 24, maxWidth: 640, width: '100%', maxHeight: '85vh', overflowY: 'auto',
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <h2 style={{ margin: 0, fontSize: 18 }}>{modalOpen === 'kvkk' ? 'KVKK Aydınlatma Metni' : 'Hizmet Şartları'}</h2>
+                <button onClick={() => setModalOpen(null)} style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: 'inherit' }}>×</button>
+              </div>
+              <div style={{ fontSize: 13, lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>
+                {modalOpen === 'kvkk' ? config.content?.kvkkText : config.content?.termsText}
+              </div>
+            </div>
+          </div>
+        )}
     </div>
   )
 }

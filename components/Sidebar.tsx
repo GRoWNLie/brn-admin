@@ -111,6 +111,7 @@ const menuItems: MenuItem[] = [
     adminOnly: true,
     children: [
       { href: '/customer-dashboard', label: '🛍 Mağazalar' },
+      { href: '/customer-dashboard/stores/1/analytics', label: '📊 Analitik (#1)' },
     ],
   },
 

@@ -2,20 +2,32 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { useParams } from 'next/navigation'
+import { useParams, useRouter } from 'next/navigation'
 
 export default function StorefrontLogin() {
   const { storeId } = useParams<{ storeId: string }>()
+  const router = useRouter()
   const base = `/storefront/${storeId}`
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [remember, setRemember] = useState(true)
-  const [msg, setMsg] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
 
-  function submit(e: React.FormEvent) {
+  async function submit(e: React.FormEvent) {
     e.preventDefault()
-    // Faz 3: Shopify Customer Account API ile doğrulama.
-    setMsg('🔒 Doğrulama Shopify Customer Account API ile bağlanacak (Faz 3).')
+    setBusy(true); setMsg(null)
+    try {
+      const res = await fetch(`/api/storefront/${storeId}/login`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      })
+      const d = await res.json()
+      setMsg({ ok: !!d.success, text: d.message || (d.success ? 'Giriş başarılı' : 'Giriş başarısız') })
+      if (d.success) setTimeout(() => router.push(`${base}/account`), 600)
+    } catch (e: any) {
+      setMsg({ ok: false, text: e?.message || 'Bağlantı hatası' })
+    } finally { setBusy(false) }
   }
 
   return (
@@ -37,9 +49,17 @@ export default function StorefrontLogin() {
           <Link href={`${base}/reset`} style={{ fontSize: 13, color: 'var(--sf-secondary)', textDecoration: 'none' }}>Şifremi unuttum</Link>
         </div>
 
-        {msg && <div style={{ marginTop: 12, padding: 10, borderRadius: 'var(--sf-radius)', background: 'rgba(37,99,235,.08)', color: 'var(--sf-secondary)', fontSize: 13 }}>{msg}</div>}
+        {msg && (
+          <div style={{
+            marginTop: 12, padding: 10, borderRadius: 'var(--sf-radius)', fontSize: 13,
+            background: msg.ok ? 'rgba(5,150,105,.1)' : 'rgba(220,38,38,.1)',
+            color: msg.ok ? '#059669' : '#DC2626',
+          }}>{msg.ok ? '✓ ' : '✕ '}{msg.text}</div>
+        )}
 
-        <button type="submit" className="sf-btn" style={{ width: '100%', marginTop: 16 }}>Giriş Yap</button>
+        <button type="submit" className="sf-btn" style={{ width: '100%', marginTop: 16 }} disabled={busy}>
+          {busy ? 'Giriş yapılıyor...' : 'Giriş Yap'}
+        </button>
       </form>
 
       <div style={{ textAlign: 'center', fontSize: 13, marginTop: 14 }}>
