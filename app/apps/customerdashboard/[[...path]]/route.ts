@@ -42,12 +42,29 @@ async function handle(req: NextRequest, pathSeg: string[]) {
   const ctx = await verifyAppProxy(req, store.id)
   if (ctx instanceof NextResponse) return ctx
 
-  // 3) Storefront sayfasına rewrite
+  // 3) Storefront sayfasını internal fetch ile çek, HTML'i Shopify'a dön
   const sub = pathSeg.length ? pathSeg.join('/') : 'login'
-  const target = req.nextUrl.clone()
+  const target = new URL(req.url)
   target.pathname = `/storefront/${store.id}/${sub}`
-  // App Proxy parametrelerini koru (logged_in_customer_id vs.)
-  return NextResponse.rewrite(target)
+  try {
+    const internalRes = await fetch(target.toString(), {
+      headers: { 'x-app-proxy': '1', 'user-agent': req.headers.get('user-agent') || 'shopify-app-proxy' },
+      cache: 'no-store',
+    })
+    const html = await internalRes.text()
+    return new NextResponse(html, {
+      status: internalRes.status,
+      headers: {
+        'Content-Type': 'text/html; charset=utf-8',
+        'Cache-Control': 'no-store',
+      },
+    })
+  } catch (e: any) {
+    return new NextResponse(`<!doctype html><html><body><p>Storefront yüklenemedi: ${e?.message || 'hata'}</p></body></html>`, {
+      status: 500,
+      headers: { 'Content-Type': 'text/html; charset=utf-8' },
+    })
+  }
 }
 
 export async function GET(req: NextRequest, { params }: { params: { path?: string[] } }) {
