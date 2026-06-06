@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { verifyAppProxy } from '@/lib/app-proxy'
-
 export const dynamic = 'force-dynamic'
 
 /**
