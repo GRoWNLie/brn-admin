@@ -21,12 +21,24 @@ async function DashboardData({ rangeDays }: { rangeDays: number }) {
     }
     return (
       <div className="panel-card" style={{ borderLeft: '4px solid #DC2626' }}>
-        <div style={{ fontSize: 15, fontWeight: 700, color: '#DC2626', marginBottom: 6 }}>
+        <div style={{ fontSize: 15, fontWeight: 700, color: '#DC2626', marginBottom: 10 }}>
           ⚠️ Shopify Bağlantı Hatası
         </div>
-        <div style={{ fontSize: 13, color: 'var(--text-muted)', whiteSpace: 'pre-wrap' }}>
-          {error}
-        </div>
+        <pre style={{
+          fontSize: 12,
+          color: 'var(--text-muted)',
+          whiteSpace: 'pre-wrap',
+          wordBreak: 'break-word',
+          fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+          background: 'rgba(0,0,0,0.03)',
+          padding: 12,
+          borderRadius: 6,
+          margin: 0,
+          maxHeight: 600,
+          overflow: 'auto',
+        }}>
+{error}
+        </pre>
       </div>
     )
   }

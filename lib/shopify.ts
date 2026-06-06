@@ -145,30 +145,78 @@ export async function shopifyFetch<T = unknown>(
         }
 
         if (res.status === 401) {
-          throw new ShopifyClientError(
-            '401 Unauthorized — Token geçersiz veya yetkisiz. ' +
-            'Kontrol listesi: (1) SHOPIFY_ADMIN_ACCESS_TOKEN doğru mu? ' +
-            '(2) Public App mağazaya install edildi mi? ' +
-            '(3) SHOPIFY_STORE_URL doğru mu (örn. xyz.myshopify.com — başında https:// OLMAMALI)? ' +
-            '(4) Token tipinin scope\'ları mevcut işlem için yeterli mi?',
-            { status: res.status, body: text.slice(0, 300) }
-          )
+          // Token'ın ilk 12 karakteri (tüm token'ı sızdırma)
+          const tokenPrefix = token ? `${token.slice(0, 12)}…` : '(boş)'
+          const tokenType = token.startsWith('shpat_') ? 'Custom App (shpat_)'
+            : token.startsWith('shpca_') ? 'Customer Account (shpca_)'
+            : token.startsWith('atkn_') ? 'App Automation Token (atkn_)'
+            : token.startsWith('shpss_') ? 'API SECRET — YANLIŞ! (shpss_)'
+            : 'Bilinmeyen format'
+          const debug = [
+            '⚠️  401 UNAUTHORIZED — Shopify token reddetti',
+            '',
+            '━━━━━━━━━ Shopify ham yanıtı ━━━━━━━━━',
+            text.slice(0, 800) || '(boş yanıt)',
+            '',
+            '━━━━━━━━━ Debug bilgisi ━━━━━━━━━',
+            `Endpoint     : ${GRAPHQL_ENDPOINT}`,
+            `Store URL    : ${STORE_URL}`,
+            `API Version  : ${API_VERSION}`,
+            `Token (ön)   : ${tokenPrefix}`,
+            `Token tipi   : ${tokenType}`,
+            `Header denedi: ${useBearer ? 'Authorization: Bearer' : 'X-Shopify-Access-Token'}`,
+            `Bearer retry : ${bearerRetryUsed ? 'evet (yine 401)' : 'hayır'}`,
+            `Token retry  : ${tokenRetriedAfter401 ? 'evet (yine 401)' : 'hayır'}`,
+            '',
+            '━━━━━━━━━ Olası nedenler ━━━━━━━━━',
+            '1) Token YANLIŞ format. shpss_ ile başlıyorsa bu API SECRET\'tir, Admin Token DEĞİL.',
+            '2) Public App mağazaya install EDİLMEDİ. Uygulamayı kaldırıp yeniden install et.',
+            '3) Token süresi dolmuş veya app silinmiş.',
+            '4) SHOPIFY_STORE_URL yanlış mağazayı gösteriyor.',
+            '5) atkn_ token kullanıyorsan: Public App\'in mağazaya install edilmiş olduğundan emin ol.',
+          ].join('\n')
+          throw new ShopifyClientError(debug, { status: res.status, body: text.slice(0, 800) })
         }
         if (res.status === 402) {
           throw new ShopifyClientError(
-            '402 Payment Required — Shopify mağaza planı yetersiz.',
+            '402 Payment Required — Shopify mağaza planı yetersiz.\n\nHam yanıt:\n' + text.slice(0, 500),
             { status: res.status }
           )
         }
         if (res.status === 403) {
-          throw new ShopifyClientError(
-            '403 Forbidden — Custom App scope ayarlarını kontrol edin (read_products, read_orders, read_customers).',
-            { status: res.status, body: text }
-          )
+          const debug = [
+            '⛔ 403 FORBIDDEN — Token var ama scope yetmiyor',
+            '',
+            '━━━━━━━━━ Shopify ham yanıtı ━━━━━━━━━',
+            text.slice(0, 800),
+            '',
+            '━━━━━━━━━ Debug ━━━━━━━━━',
+            `Endpoint   : ${GRAPHQL_ENDPOINT}`,
+            `Store URL  : ${STORE_URL}`,
+            `Token (ön) : ${token.slice(0, 12)}…`,
+            '',
+            'Çözüm: Custom App / Public App scope\'larına şunları ekle:',
+            '  read_products, read_orders, read_customers, read_inventory,',
+            '  read_locations, read_discounts, read_draft_orders',
+          ].join('\n')
+          throw new ShopifyClientError(debug, { status: res.status, body: text })
         }
         if (res.status === 404) {
           throw new ShopifyClientError(
-            `404 Not Found — Mağaza URL'i (${STORE_URL}) veya API_VERSION (${API_VERSION}) hatalı.`,
+            [
+              `🔎 404 NOT FOUND — Shopify mağazası veya API sürümü bulunamadı`,
+              '',
+              '━━━━━━━━━ Debug ━━━━━━━━━',
+              `Endpoint    : ${GRAPHQL_ENDPOINT}`,
+              `Store URL   : ${STORE_URL}`,
+              `API Version : ${API_VERSION}`,
+              '',
+              '━━━━━━━━━ Ham yanıt ━━━━━━━━━',
+              text.slice(0, 500),
+              '',
+              'Çözüm: SHOPIFY_STORE_URL formatı doğru mu? "xyz.myshopify.com" olmalı.',
+              'SHOPIFY_API_VERSION değeri "2024-01" / "2024-04" / "2024-07" gibi olmalı.',
+            ].join('\n'),
             { status: res.status }
           )
         }
@@ -178,7 +226,16 @@ export async function shopifyFetch<T = unknown>(
           continue
         }
         throw new ShopifyClientError(
-          `Shopify HTTP ${res.status}: ${text.slice(0, 200)}`,
+          [
+            `❌ Shopify HTTP ${res.status}`,
+            '',
+            '━━━━━━━━━ Ham yanıt ━━━━━━━━━',
+            text.slice(0, 800),
+            '',
+            '━━━━━━━━━ Debug ━━━━━━━━━',
+            `Endpoint  : ${GRAPHQL_ENDPOINT}`,
+            `Store URL : ${STORE_URL}`,
+          ].join('\n'),
           { status: res.status }
         )
       }
@@ -224,8 +281,22 @@ export async function shopifyFetch<T = unknown>(
     }
   }
 
+  // STORE_URL'i tekrar oku — fetch failed gibi durumlarda kullanıcıya net göster
+  const finalStoreUrl = STORE_URL || '(boş)'
   throw new ShopifyClientError(
-    'Shopify isteği başarısız: ' + (lastError instanceof Error ? lastError.message : 'Bilinmeyen hata'),
+    [
+      '❌ Shopify isteği başarısız (network/diğer)',
+      '',
+      '━━━━━━━━━ Son hata ━━━━━━━━━',
+      lastError instanceof Error ? lastError.message : String(lastError ?? 'Bilinmeyen hata'),
+      '',
+      '━━━━━━━━━ Debug ━━━━━━━━━',
+      `Endpoint  : ${GRAPHQL_ENDPOINT}`,
+      `Store URL : ${finalStoreUrl}`,
+      `Deneme    : ${attempt}/${maxRetries}`,
+      '',
+      'Olası nedenler: DNS hatası, mağaza URL yanlış (örn. "https://https://"), internet kesik.',
+    ].join('\n'),
     lastError
   )
 }
