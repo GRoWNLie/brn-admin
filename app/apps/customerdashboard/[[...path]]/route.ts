@@ -43,9 +43,10 @@ async function handle(req: NextRequest, pathSeg: string[]) {
   if (ctx instanceof NextResponse) return ctx
 
   // 3) Storefront sayfasını internal fetch ile çek, HTML'i Shopify'a dön
+  // ÖNEMLİ: fetch BİZİM admin sunucumuza gitmeli (Shopify mağaza domain'ine değil).
   const sub = pathSeg.length ? pathSeg.join('/') : 'login'
-  const target = new URL(req.url)
-  target.pathname = `/storefront/${store.id}/${sub}`
+  const baseUrl = process.env.NEXTAUTH_URL || process.env.APP_URL || 'http://localhost:3000'
+  const target = new URL(`/storefront/${store.id}/${sub}`, baseUrl)
   try {
     const internalRes = await fetch(target.toString(), {
       headers: { 'x-app-proxy': '1', 'user-agent': req.headers.get('user-agent') || 'shopify-app-proxy' },
@@ -60,7 +61,7 @@ async function handle(req: NextRequest, pathSeg: string[]) {
       },
     })
   } catch (e: any) {
-    return new NextResponse(`<!doctype html><html><body><p>Storefront yüklenemedi: ${e?.message || 'hata'}</p></body></html>`, {
+    return new NextResponse(`<!doctype html><html><body><p>Storefront yüklenemedi: ${e?.message || 'hata'}</p><p>Hedef: ${target.toString()}</p></body></html>`, {
       status: 500,
       headers: { 'Content-Type': 'text/html; charset=utf-8' },
     })
