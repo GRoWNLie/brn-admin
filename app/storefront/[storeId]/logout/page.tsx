@@ -8,7 +8,11 @@ export default function StorefrontLogout() {
   const router = useRouter()
   useEffect(() => {
     fetch(`/api/storefront/${storeId}/logout`, { method: 'POST' }).finally(() => {
-      (window.location.pathname.includes('/apps/customerdashboard') ? (window.location.replace('/apps/customerdashboard/login')) : router.replace(`/storefront/${storeId}/login`))
+      if (typeof window !== 'undefined' && window.location.pathname.includes('/apps/customerdashboard')) {
+        window.location.replace('/apps/customerdashboard/login')
+      } else {
+        router.replace(`/storefront/${storeId}/login`)
+      }
     })
   }, [storeId, router])
   return <div className="sf-card"><div className="sf-muted">Çıkış yapılıyor...</div></div>

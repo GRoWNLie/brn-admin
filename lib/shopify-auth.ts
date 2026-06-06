@@ -28,9 +28,16 @@ export async function getShopifyAccessToken(): Promise<string> {
     return cached.token
   }
 
-  // 2) Manuel token varsa onu kullan (Custom App permanent token, expire olmaz)
-  const MANUAL_TOKEN = await getSetting('SHOPIFY_ADMIN_ACCESS_TOKEN')
-  if (MANUAL_TOKEN && MANUAL_TOKEN.startsWith('shpat_')) {
+  // 2) Manuel token varsa onu kullan
+  //    Kabul edilen formatlar:
+  //      - shpat_...  (Custom App permanent token)
+  //      - shpca_...  (Customer Account)
+  //      - atkn_...   (App Automation Token — Public App "Uygulama otomasyonu belirteci")
+  //      - veya en az 20 karakterlik herhangi bir token (manuel girilmiş olabilir)
+  const MANUAL_TOKEN = (await getSetting('SHOPIFY_ADMIN_ACCESS_TOKEN'))?.trim()
+  const isValidTokenFormat = (t: string) =>
+    t.startsWith('shpat_') || t.startsWith('shpca_') || t.startsWith('atkn_') || t.length >= 20
+  if (MANUAL_TOKEN && isValidTokenFormat(MANUAL_TOKEN)) {
     cached = {
       token: MANUAL_TOKEN,
       // Manuel token expire olmaz — 24 saat sonra revalidate

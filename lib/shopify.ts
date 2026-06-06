@@ -67,7 +67,14 @@ export async function shopifyFetch<T = unknown>(
   query: string,
   options: ShopifyOptions = {}
 ): Promise<T> {
-  const STORE_URL = await getSetting('SHOPIFY_STORE_URL')
+  // SHOPIFY_STORE_URL: başında "https://" veya "http://" varsa otomatik temizle,
+  // sondaki slash ve path'leri de kaldır → sadece "xyz.myshopify.com" formatı.
+  const rawStoreUrl = (await getSetting('SHOPIFY_STORE_URL')) || ''
+  const STORE_URL = rawStoreUrl
+    .trim()
+    .replace(/^https?:\/\//i, '')
+    .replace(/\/.*$/, '')
+    .replace(/\/$/, '')
   const API_VERSION = (await getSetting('SHOPIFY_API_VERSION')) || '2024-01'
   const GRAPHQL_ENDPOINT = STORE_URL
     ? `https://${STORE_URL}/admin/api/${API_VERSION}/graphql.json`
@@ -80,6 +87,7 @@ export async function shopifyFetch<T = unknown>(
   let attempt = 0
   let lastError: unknown = null
   let tokenRetriedAfter401 = false
+  let bearerRetryUsed = false
 
   while (attempt <= maxRetries) {
     attempt++
@@ -94,14 +102,26 @@ export async function shopifyFetch<T = unknown>(
       )
     }
 
-    try {
-      const res = await fetch(GRAPHQL_ENDPOINT, {
-        method: 'POST',
-        headers: {
+    // Bazı yeni Shopify token formatları (örn. App Automation Token "atkn_")
+    // X-Shopify-Access-Token yerine Authorization: Bearer header'ı bekler.
+    // İlk denemede klasik header'ı kullan, 401 alınırsa Bearer ile yeniden dene.
+    const useBearer = bearerRetryUsed
+    const authHeaders: Record<string, string> = useBearer
+      ? {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+          'Accept': 'application/json',
+        }
+      : {
           'Content-Type': 'application/json',
           'X-Shopify-Access-Token': token,
           'Accept': 'application/json',
-        },
+        }
+
+    try {
+      const res = await fetch(GRAPHQL_ENDPOINT, {
+        method: 'POST',
+        headers: authHeaders,
         body: JSON.stringify({ query, variables }),
         next: cacheSeconds > 0 ? { revalidate: cacheSeconds } : { revalidate: 0 },
       })
@@ -117,10 +137,21 @@ export async function shopifyFetch<T = unknown>(
           continue
         }
 
+        // 401 ve manuel token aynı kalıyorsa → Bearer header ile bir defa daha dene
+        if (res.status === 401 && !bearerRetryUsed) {
+          console.log('🔄 Shopify 401 — Authorization: Bearer header ile yeniden deneniyor...')
+          bearerRetryUsed = true
+          continue
+        }
+
         if (res.status === 401) {
           throw new ShopifyClientError(
-            '401 Unauthorized — Token geçersiz. Custom App\'ten token yeniden oluşturun veya CLIENT_ID/SECRET\'i kontrol edin.',
-            { status: res.status, body: text }
+            '401 Unauthorized — Token geçersiz veya yetkisiz. ' +
+            'Kontrol listesi: (1) SHOPIFY_ADMIN_ACCESS_TOKEN doğru mu? ' +
+            '(2) Public App mağazaya install edildi mi? ' +
+            '(3) SHOPIFY_STORE_URL doğru mu (örn. xyz.myshopify.com — başında https:// OLMAMALI)? ' +
+            '(4) Token tipinin scope\'ları mevcut işlem için yeterli mi?',
+            { status: res.status, body: text.slice(0, 300) }
           )
         }
         if (res.status === 402) {

@@ -13,7 +13,14 @@ export default function StorefrontAccount() {
 
   useEffect(() => {
     fetch(`/api/storefront/${storeId}/me?include=orders`).then(async r => {
-      if (r.status === 401) { (window.location.pathname.includes('/apps/customerdashboard') ? (window.location.href = '/apps/customerdashboard/login') : router.push(`${base}/login`)); return }
+      if (r.status === 401) {
+        if (typeof window !== 'undefined' && window.location.pathname.includes('/apps/customerdashboard')) {
+          window.location.href = '/apps/customerdashboard/login'
+        } else {
+          router.push(`${base}/login`)
+        }
+        return
+      }
       const d = await r.json()
       if (d.success) setData(d)
       setLoading(false)
