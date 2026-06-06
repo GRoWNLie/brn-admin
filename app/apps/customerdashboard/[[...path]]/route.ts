@@ -52,7 +52,35 @@ async function handle(req: NextRequest, pathSeg: string[]) {
       headers: { 'x-app-proxy': '1', 'user-agent': req.headers.get('user-agent') || 'shopify-app-proxy' },
       cache: 'no-store',
     })
-    const html = await internalRes.text()
+    let html = await internalRes.text()
+    // Storefront sayfası mağaza domain'inde render edildiği için (sekerco.com),
+    // /_next/static, /api/..., href="/storefront/..." gibi yollar mağazaya gider → 404.
+    // Çözüm: <base> + fetch interceptor + link rewrite ile hepsini admin'e yönlendir.
+    const injected = `
+      <base href="${baseUrl}/">
+      <script>
+        window.__SF_API_BASE = '${baseUrl}';
+        (function(){
+          var f = window.fetch;
+          window.fetch = function(input, init){
+            if (typeof input === 'string' && input.charAt(0) === '/') {
+              input = window.__SF_API_BASE + input;
+            }
+            return f.call(this, input, init);
+          };
+          // Next.js router.push absolute URL almaz; biz href'leri rewrite edip
+          // navigation'ı App Proxy URL'inde tutalım.
+          document.addEventListener('click', function(e){
+            var a = e.target.closest && e.target.closest('a');
+            if (!a) return;
+            var href = a.getAttribute('href') || '';
+            var m = href.match(/^\\/storefront\\/\\d+\\/(.*)$/);
+            if (m) { e.preventDefault(); window.location.href = '/apps/customerdashboard/' + m[1]; }
+          }, true);
+        })();
+      </script>
+    `
+    html = html.replace(/<head[^>]*>/i, (m) => m + injected)
     return new NextResponse(html, {
       status: internalRes.status,
       headers: {
