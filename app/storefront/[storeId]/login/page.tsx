@@ -24,7 +24,12 @@ export default function StorefrontLogin() {
       })
       const d = await res.json()
       setMsg({ ok: !!d.success, text: d.message || (d.success ? 'Giriş başarılı' : 'Giriş başarısız') })
-      if (d.success) setTimeout(() => router.push(`${base}/account`), 600)
+      if (d.success) setTimeout(() => {
+        // App Proxy modunda mı? (mağaza domain'inde mi?) → full reload ile App Proxy URL'ine git
+        const inAppProxy = typeof window !== 'undefined' && window.location.pathname.includes('/apps/customerdashboard')
+        if (inAppProxy) window.location.href = '/apps/customerdashboard/account'
+        else router.push(`${base}/account`)
+      }, 600)
     } catch (e: any) {
       setMsg({ ok: false, text: e?.message || 'Bağlantı hatası' })
     } finally { setBusy(false) }

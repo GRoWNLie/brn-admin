@@ -11,7 +11,7 @@ export default function StorefrontTop() {
 
   useEffect(() => {
     fetch(`/api/storefront/${storeId}/me?include=top`).then(async r => {
-      if (r.status === 401) { router.push(`/storefront/${storeId}/login`); return }
+      if (r.status === 401) { (window.location.pathname.includes('/apps/customerdashboard') ? (window.location.href = '/apps/customerdashboard/login') : router.push(`/storefront/${storeId}/login`)); return }
       const d = await r.json()
       if (d.success) setItems(d.top || [])
       setLoading(false)

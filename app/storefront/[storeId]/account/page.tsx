@@ -13,7 +13,7 @@ export default function StorefrontAccount() {
 
   useEffect(() => {
     fetch(`/api/storefront/${storeId}/me?include=orders`).then(async r => {
-      if (r.status === 401) { router.push(`${base}/login`); return }
+      if (r.status === 401) { (window.location.pathname.includes('/apps/customerdashboard') ? (window.location.href = '/apps/customerdashboard/login') : router.push(`${base}/login`)); return }
       const d = await r.json()
       if (d.success) setData(d)
       setLoading(false)
@@ -22,7 +22,11 @@ export default function StorefrontAccount() {
 
   async function logout() {
     await fetch(`/api/storefront/${storeId}/logout`, { method: 'POST' })
-    router.push(`${base}/login`)
+    if (window.location.pathname.includes('/apps/customerdashboard')) {
+      window.location.href = '/apps/customerdashboard/login'
+    } else {
+      router.push(`${base}/login`)
+    }
   }
 
   if (loading) return <div className="sf-card"><div className="sf-muted">⏳ Yükleniyor...</div></div>

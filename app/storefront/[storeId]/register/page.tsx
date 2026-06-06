@@ -25,7 +25,11 @@ export default function StorefrontRegister() {
       const d = await res.json()
       if (d.success) {
         setMsg({ ok: true, text: '✓ Hesap oluşturuldu — yönlendiriliyorsun...' })
-        setTimeout(() => router.push(`${base}/account`), 700)
+        setTimeout(() => {
+          const inAppProxy = typeof window !== 'undefined' && window.location.pathname.includes('/apps/customerdashboard')
+          if (inAppProxy) window.location.href = '/apps/customerdashboard/account'
+          else router.push(`${base}/account`)
+        }, 700)
       } else {
         setMsg({ ok: false, text: d.message || 'Kayıt başarısız' })
       }
