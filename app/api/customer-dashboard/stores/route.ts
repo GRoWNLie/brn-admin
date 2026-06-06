@@ -34,3 +34,10 @@ export async function POST(req: NextRequest) {
   await logAuditAuto('store.create', { req, resource: `store:${store.id}`, detail: { slug: store.slug, name: store.name } })
   return NextResponse.json({ success: true, store: maskStore(store) })
 }
+catch (error) {
+  // HATANIN ASIL KAYNAĞINI RAILWAY LOGLARINA YAZDIRALIM
+  console.log("💥 FETCH PATLADI! DENENEN URL:", denenenFetchUrlDegiskeni);
+  console.error("💥 TAM HATA DETAYI:", error);
+  
+  return new Response(`Storefront yüklenemedi: ${error.message}`, { status: 500 });
+}
