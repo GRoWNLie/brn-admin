@@ -12,6 +12,6 @@ export async function POST(req: NextRequest, { params }: { params: { storeId: st
   const b = await req.json().catch(() => ({}))
   const r = await attemptLogin(storeId, String(b.email || ''), String(b.password || ''))
   if (!r.ok || !r.customerId) return NextResponse.json({ success: false, message: r.message }, { status: 401 })
-  await createSession(storeId, r.customerId)
+  await createSession(storeId, r.customerId, r.accessToken ? { accessToken: r.accessToken } : undefined)
   return NextResponse.json({ success: true, message: r.message })
 }

@@ -12,6 +12,7 @@ export interface StoreConfig {
   proxySecret?: string                  // App Proxy shared secret (Shopify Admin → App Proxy)
   customerAccountClientId?: string
   customerAccountClientSecret?: string
+  storefrontAccessToken?: string        // Storefront API public token (email/şifre login için)
   apiVersion?: string
 }
 
@@ -64,9 +65,10 @@ export async function updateStoreConfig(storeId: number, patch: Partial<StoreCon
   return prisma.store.update({ where: { id: storeId }, data: { config: encryptJson(current) } })
 }
 
-export async function getStoreConfig(storeId: number): Promise<StoreConfig> {
+export async function getStoreConfig(storeId: number): Promise<StoreConfig & { shopifyDomain?: string }> {
   const s = await prisma.store.findUnique({ where: { id: storeId } })
-  return (decryptJson<StoreConfig>(s?.config ?? null) ?? {}) as StoreConfig
+  const cfg = (decryptJson<StoreConfig>(s?.config ?? null) ?? {}) as StoreConfig
+  return { ...cfg, shopifyDomain: s?.shopifyDomain ?? undefined }
 }
 
 /** UI'ya gönderim için: secret alanlar maskelenir, dolu olup olmadıkları görünür. */
@@ -82,6 +84,7 @@ export function maskStore(store: any) {
       hasApiSecret: !!cfg.apiSecret,
       hasProxySecret: !!cfg.proxySecret,
       hasCustomerAccount: !!(cfg.customerAccountClientId && cfg.customerAccountClientSecret),
+      hasStorefrontToken: !!cfg.storefrontAccessToken,
       apiVersion: cfg.apiVersion || null,
     },
   }

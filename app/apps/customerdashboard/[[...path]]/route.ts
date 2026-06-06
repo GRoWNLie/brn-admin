@@ -8,12 +8,6 @@ export const dynamic = 'force-dynamic'
  * Shopify App Proxy router.
  * Shopify, magaza.com/apps/customerdashboard/* URL'lerini buraya yönlendirir
  * (Partner App → App Proxy → Proxy URL: https://senin-domain.com/apps/customerdashboard/login).
- *
- * Akış:
- *   1) Query'den ?shop=magaza.myshopify.com → store'u DB'de bul
- *      (yoksa custom_domain veya host header'la dene)
- *   2) verifyAppProxy ile signature'ı doğrula (production'da zorunlu)
- *   3) Doğru /storefront/[storeId]/<path> sayfasına rewrite et (URL'de storeId GÖRÜNMEZ)
  */
 
 async function handle(req: NextRequest, pathSeg: string[]) {
@@ -31,9 +25,11 @@ async function handle(req: NextRequest, pathSeg: string[]) {
     },
     select: { id: true, status: true },
   })
+
   if (!store) {
     return NextResponse.json({ success: false, message: 'Mağaza tanımlı değil. BRN Admin → Customer Dashboard → Mağazalar üzerinden ekleyin.' }, { status: 404 })
   }
+
   if (store.status === 'paused') {
     return NextResponse.json({ success: false, message: 'Mağaza şu an erişilebilir değil.' }, { status: 403 })
   }
@@ -43,23 +39,38 @@ async function handle(req: NextRequest, pathSeg: string[]) {
   if (ctx instanceof NextResponse) return ctx
 
   // 3) Storefront sayfasını internal fetch ile çek, HTML'i Shopify'a dön
-  // ÖNEMLİ: fetch BİZİM admin sunucumuza gitmeli (Shopify mağaza domain'ine değil).
   const sub = pathSeg.length ? pathSeg.join('/') : 'login'
-  const baseUrl = process.env.NEXTAUTH_URL || process.env.APP_URL || 'http://localhost:3000'
-  const target = new URL(`/storefront/${store.id}/${sub}`, baseUrl)
+
+  // Internal fetch hedef URL'i:
+  //   - NEXTAUTH_URL (production: https://admin.sekerco.com)
+  //   - VERCEL_URL (Vercel serverless fallback)
+  //   - 127.0.0.1:PORT (lokal/Railway fallback — DNS gerekmez)
+  const appBase =
+    process.env.NEXTAUTH_URL ||
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null) ||
+    `http://127.0.0.1:${process.env.PORT || '3000'}`
+
+  // Tarayıcıya enjekte edilen <base>, fetch interceptor ve click handler için
+  // public admin URL'i lazım (127.0.0.1 değil).
+  const publicBase = process.env.NEXTAUTH_URL || appBase
+
+  const target = new URL(`/storefront/${store.id}/${sub}`, appBase)
+
   try {
+    console.log('🔥 INTERNAL FETCH:', target.toString())
     const internalRes = await fetch(target.toString(), {
       headers: { 'x-app-proxy': '1', 'user-agent': req.headers.get('user-agent') || 'shopify-app-proxy' },
       cache: 'no-store',
     })
     let html = await internalRes.text()
+
     // Storefront sayfası mağaza domain'inde render edildiği için (sekerco.com),
     // /_next/static, /api/..., href="/storefront/..." gibi yollar mağazaya gider → 404.
     // Çözüm: <base> + fetch interceptor + link rewrite ile hepsini admin'e yönlendir.
     const injected = `
-      <base href="${baseUrl}/">
+      <base href="${publicBase}/">
       <script>
-        window.__SF_API_BASE = '${baseUrl}';
+        window.__SF_API_BASE = '${publicBase}';
         (function(){
           var f = window.fetch;
           window.fetch = function(input, init){
@@ -68,8 +79,7 @@ async function handle(req: NextRequest, pathSeg: string[]) {
             }
             return f.call(this, input, init);
           };
-          // Next.js router.push absolute URL almaz; biz href'leri rewrite edip
-          // navigation'ı App Proxy URL'inde tutalım.
+          // Storefront link'lerini App Proxy URL'inde tut (mağaza domain'inde kalsın).
           document.addEventListener('click', function(e){
             var a = e.target.closest && e.target.closest('a');
             if (!a) return;
@@ -81,6 +91,7 @@ async function handle(req: NextRequest, pathSeg: string[]) {
       </script>
     `
     html = html.replace(/<head[^>]*>/i, (m) => m + injected)
+
     return new NextResponse(html, {
       status: internalRes.status,
       headers: {
@@ -89,16 +100,19 @@ async function handle(req: NextRequest, pathSeg: string[]) {
       },
     })
   } catch (e: any) {
-    return new NextResponse(`<!doctype html><html><body><p>Storefront yüklenemedi: ${e?.message || 'hata'}</p><p>Hedef: ${target.toString()}</p></body></html>`, {
-      status: 500,
-      headers: { 'Content-Type': 'text/html; charset=utf-8' },
-    })
+    console.error('💥 FETCH PATLADI! HEDEF URL:', target.toString())
+    console.error('💥 TAM HATA DETAYI:', e)
+    return new NextResponse(
+      `<!doctype html><html><body><p>Storefront yüklenemedi: ${e?.message || 'Bilinmeyen hata'}</p><p>Hedef: ${target.toString()}</p></body></html>`,
+      { status: 500, headers: { 'Content-Type': 'text/html; charset=utf-8' } },
+    )
   }
 }
 
 export async function GET(req: NextRequest, { params }: { params: { path?: string[] } }) {
   return handle(req, params.path ?? [])
 }
+
 export async function POST(req: NextRequest, { params }: { params: { path?: string[] } }) {
   return handle(req, params.path ?? [])
 }

@@ -119,11 +119,12 @@ function GeneralTab({ store, onSave }: { store: any; onSave: (b: any) => void })
     status: store.status,
     adminToken: '', apiKey: '', apiSecret: '', proxySecret: '',
     customerAccountClientId: '', customerAccountClientSecret: '',
+    storefrontAccessToken: '',
   })
   function set(k: string, v: string) { setForm(p => ({ ...p, [k]: v })) }
   function save() {
     const config: any = {}
-    for (const k of ['adminToken', 'apiKey', 'apiSecret', 'proxySecret', 'customerAccountClientId', 'customerAccountClientSecret']) {
+    for (const k of ['adminToken', 'apiKey', 'apiSecret', 'proxySecret', 'customerAccountClientId', 'customerAccountClientSecret', 'storefrontAccessToken']) {
       if ((form as any)[k]) config[k] = (form as any)[k]
     }
     onSave({
@@ -151,6 +152,7 @@ function GeneralTab({ store, onSave }: { store: any; onSave: (b: any) => void })
       <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 10 }}>
         Boş bırakılan alanlar mevcut değerleri korur. {store.configFields.hasAdminToken && '✓ Admin Token tanımlı '}
         {store.configFields.hasProxySecret && '✓ Proxy Secret tanımlı '}
+        {store.configFields.hasStorefrontToken && '✓ Storefront Token tanımlı '}
         {store.configFields.hasCustomerAccount && '✓ Customer Account tanımlı'}
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 12 }}>
@@ -158,6 +160,7 @@ function GeneralTab({ store, onSave }: { store: any; onSave: (b: any) => void })
         <Secret label="API Key" value={form.apiKey} onChange={v => set('apiKey', v)} />
         <Secret label="API Secret" value={form.apiSecret} onChange={v => set('apiSecret', v)} />
         <Secret label="App Proxy Shared Secret" value={form.proxySecret} onChange={v => set('proxySecret', v)} />
+        <Secret label="Storefront API Access Token" value={form.storefrontAccessToken} onChange={v => set('storefrontAccessToken', v)} placeholder="Email/şifre login için zorunlu" />
         <Secret label="Customer Account Client ID" value={form.customerAccountClientId} onChange={v => set('customerAccountClientId', v)} />
         <Secret label="Customer Account Client Secret" value={form.customerAccountClientSecret} onChange={v => set('customerAccountClientSecret', v)} />
       </div>

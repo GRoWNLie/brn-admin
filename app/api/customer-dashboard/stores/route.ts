@@ -34,3 +34,5 @@ export async function POST(req: NextRequest) {
   await logAuditAuto('store.create', { req, resource: `store:${store.id}`, detail: { slug: store.slug, name: store.name } })
   return NextResponse.json({ success: true, store: maskStore(store) })
 }
+
+
