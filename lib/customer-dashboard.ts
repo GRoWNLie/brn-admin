@@ -12,7 +12,7 @@ export interface StoreConfig {
   proxySecret?: string                  // App Proxy shared secret (Shopify Admin → App Proxy)
   customerAccountClientId?: string
   customerAccountClientSecret?: string
-  storefrontAccessToken?: string   
+  storefrontAccessToken?: string        // Storefront API public token (email/şifre login için)
   apiVersion?: string
 }
 
@@ -83,7 +83,8 @@ export function maskStore(store: any) {
       hasApiKey: !!cfg.apiKey,
       hasApiSecret: !!cfg.apiSecret,
       hasProxySecret: !!cfg.proxySecret,
-      hasCustomerAccount: !!(      hasStorefrontToken: !!cfg.storefrontAccessToken,),
+      hasCustomerAccount: !!(cfg.customerAccountClientId && cfg.customerAccountClientSecret),
+      hasStorefrontToken: !!cfg.storefrontAccessToken,
       apiVersion: cfg.apiVersion || null,
     },
   }
