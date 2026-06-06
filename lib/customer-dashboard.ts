@@ -12,6 +12,7 @@ export interface StoreConfig {
   proxySecret?: string                  // App Proxy shared secret (Shopify Admin → App Proxy)
   customerAccountClientId?: string
   customerAccountClientSecret?: string
+  storefrontAccessToken?: string   
   apiVersion?: string
 }
 
