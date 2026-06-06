@@ -38,7 +38,42 @@ async function handle(req: NextRequest, pathSeg: string[]) {
   const ctx = await verifyAppProxy(req, store.id)
   if (ctx instanceof NextResponse) return ctx
 
-  // 3) Storefront sayfasını internal fetch ile çek, HTML'i Shopify'a dön
+  // 3a) API isteği mi? `/apps/customerdashboard/api/<action>` → `/api/storefront/{storeId}/<action>`
+  // Aynı origin'de kalır → CORS yok, cookie düzgün çalışır.
+  if (pathSeg[0] === 'api') {
+    const action = pathSeg.slice(1).join('/')
+    const appBase =
+      process.env.NEXTAUTH_URL ||
+      (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null) ||
+      `http://127.0.0.1:${process.env.PORT || '3000'}`
+    const apiUrl = new URL(`/api/storefront/${store.id}/${action}`, appBase)
+    const method = req.method
+    const body = method !== 'GET' && method !== 'HEAD' ? await req.text() : undefined
+    try {
+      const apiRes = await fetch(apiUrl.toString(), {
+        method,
+        headers: {
+          'Content-Type': req.headers.get('content-type') || 'application/json',
+          cookie: req.headers.get('cookie') || '',
+        },
+        body, cache: 'no-store',
+      })
+      const responseBody = await apiRes.text()
+      const out = new NextResponse(responseBody, {
+        status: apiRes.status,
+        headers: { 'Content-Type': apiRes.headers.get('content-type') || 'application/json' },
+      })
+      // Set-Cookie header'larını forward et (login session için kritik)
+      apiRes.headers.forEach((value, key) => {
+        if (key.toLowerCase() === 'set-cookie') out.headers.append('set-cookie', value)
+      })
+      return out
+    } catch (e: any) {
+      return NextResponse.json({ success: false, message: e?.message || 'API çağrısı başarısız' }, { status: 500 })
+    }
+  }
+
+  // 3b) Storefront sayfasını internal fetch ile çek, HTML'i Shopify'a dön
   const sub = pathSeg.length ? pathSeg.join('/') : 'login'
 
   // Internal fetch hedef URL'i:
@@ -71,11 +106,21 @@ async function handle(req: NextRequest, pathSeg: string[]) {
       <base href="${publicBase}/">
       <script>
         window.__SF_API_BASE = '${publicBase}';
+        window.__SF_STORE_ID = ${store.id};
         (function(){
           var f = window.fetch;
           window.fetch = function(input, init){
-            if (typeof input === 'string' && input.charAt(0) === '/') {
-              input = window.__SF_API_BASE + input;
+            if (typeof input === 'string') {
+              // /api/storefront/{id}/<action> → /apps/customerdashboard/api/<action>
+              // (aynı origin'de kalır → CORS yok + cookie çalışır)
+              var m = input.match(/^\\/api\\/storefront\\/[^\\/]+\\/(.+)$/);
+              if (m) {
+                input = '/apps/customerdashboard/api/' + m[1];
+              } else if (input.charAt(0) === '/' && !input.startsWith('/apps/')) {
+                // Diğer /_next/, /api/auth gibi yollar admin'e (cross-origin OK)
+                input = window.__SF_API_BASE + input;
+              }
+              // credentials: 'same-origin' zorlamamak için init.credentials varsayılan kalır
             }
             return f.call(this, input, init);
           };
