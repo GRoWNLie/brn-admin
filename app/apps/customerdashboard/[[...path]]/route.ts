@@ -73,3 +73,13 @@ export async function GET(req: NextRequest, { params }: { params: { path?: strin
 export async function POST(req: NextRequest, { params }: { params: { path?: string[] } }) {
   return handle(req, params.path ?? [])
 }
+} catch (error) {
+  // HATANIN ASIL KAYNAĞINI RAILWAY LOGLARINA YAZDIRIYORUZ
+  console.log("💥 FETCH PATLADI! DENENEN URL:", request.url); 
+  console.error("💥 TAM HATA DETAYI:", error);
+  
+  return new Response(`Storefront yüklenemedi: ${error.message}`, { 
+    status: 500,
+    headers: { 'Content-Type': 'application/liquid' }
+  });
+}
