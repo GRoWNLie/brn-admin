@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { verifyAppProxy } from '@/lib/app-proxy'
+
 export const dynamic = 'force-dynamic'
 
 /**
@@ -30,11 +31,11 @@ async function handle(req: NextRequest, pathSeg: string[]) {
     },
     select: { id: true, status: true },
   })
-  
+
   if (!store) {
     return NextResponse.json({ success: false, message: 'Mağaza tanımlı değil. BRN Admin → Customer Dashboard → Mağazalar üzerinden ekleyin.' }, { status: 404 })
   }
-  
+
   if (store.status === 'paused') {
     return NextResponse.json({ success: false, message: 'Mağaza şu an erişilebilir değil.' }, { status: 403 })
   }
@@ -45,11 +46,18 @@ async function handle(req: NextRequest, pathSeg: string[]) {
 
   // 3) Storefront sayfasını internal fetch ile çek, HTML'i Shopify'a dön
   const sub = pathSeg.length ? pathSeg.join('/') : 'login'
-  const target = new URL(req.url)
-  target.pathname = `/storefront/${store.id}/${sub}`
   
+  // Mevcut URL'i klonluyoruz ki Shopify'ın ?shop=... gibi kritik parametreleri kaybolmasın
+  const target = new URL(req.url)
+  
+  // İç ağda (Railway container) olduğumuz için SSL (https) aramadan, doğrudan yerel porta bağlanıyoruz!
+  // Node 18+ sürümlerinde IPv6 çakışmasını önlemek için localhost yerine 127.0.0.1 kullanıyoruz.
+  target.protocol = 'http:'
+  target.hostname = '127.0.0.1'
+  target.port = process.env.PORT || '3000'
+  target.pathname = `/storefront/${store.id}/${sub}`
+
   try {
-    // İstek atılmadan hemen önce tam URL'i loglayalım
     console.log("🔥 INTERNAL FETCH DENENIYOR:", target.toString()) 
     
     const internalRes = await fetch(target.toString(), {
@@ -67,11 +75,10 @@ async function handle(req: NextRequest, pathSeg: string[]) {
       },
     })
   } catch (e: any) {
-    // 💥 İŞTE DOĞRU CATCH BLOĞU BURASI! HATA BURADA YAKALANIP LOGLANACAK
     console.error("💥 FETCH PATLADI! HEDEF URL:", target.toString());
     console.error("💥 TAM HATA DETAYI:", e);
     
-    return new NextResponse(`<!doctype html><html><body><p>Storefront yüklenemedi: ${e?.message || 'hata'}</p></body></html>`, {
+    return new NextResponse(`<!doctype html><html><body><p>Storefront yüklenemedi: ${e?.message || 'Bilinmeyen bir hata'}</p></body></html>`, {
       status: 500,
       headers: { 'Content-Type': 'text/html; charset=utf-8' },
     })
