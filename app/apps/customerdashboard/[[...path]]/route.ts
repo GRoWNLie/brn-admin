@@ -10,10 +10,10 @@ export const dynamic = 'force-dynamic'
  * (Partner App → App Proxy → Proxy URL: https://senin-domain.com/apps/customerdashboard/login).
  *
  * Akış:
- *   1) Query'den ?shop=magaza.myshopify.com → store'u DB'de bul
- *      (yoksa custom_domain veya host header'la dene)
- *   2) verifyAppProxy ile signature'ı doğrula (production'da zorunlu)
- *   3) Doğru /storefront/[storeId]/<path> sayfasına rewrite et (URL'de storeId GÖRÜNMEZ)
+ * 1) Query'den ?shop=magaza.myshopify.com → store'u DB'de bul
+ * (yoksa custom_domain veya host header'la dene)
+ * 2) verifyAppProxy ile signature'ı doğrula (production'da zorunlu)
+ * 3) Doğru /storefront/[storeId]/<path> sayfasına rewrite et (URL'de storeId GÖRÜNMEZ)
  */
 
 async function handle(req: NextRequest, pathSeg: string[]) {
@@ -31,9 +31,11 @@ async function handle(req: NextRequest, pathSeg: string[]) {
     },
     select: { id: true, status: true },
   })
+  
   if (!store) {
     return NextResponse.json({ success: false, message: 'Mağaza tanımlı değil. BRN Admin → Customer Dashboard → Mağazalar üzerinden ekleyin.' }, { status: 404 })
   }
+  
   if (store.status === 'paused') {
     return NextResponse.json({ success: false, message: 'Mağaza şu an erişilebilir değil.' }, { status: 403 })
   }
@@ -46,12 +48,18 @@ async function handle(req: NextRequest, pathSeg: string[]) {
   const sub = pathSeg.length ? pathSeg.join('/') : 'login'
   const target = new URL(req.url)
   target.pathname = `/storefront/${store.id}/${sub}`
+  
   try {
+    // İstek atılmadan hemen önce tam URL'i loglayalım
+    console.log("🔥 INTERNAL FETCH DENENIYOR:", target.toString()) 
+    
     const internalRes = await fetch(target.toString(), {
       headers: { 'x-app-proxy': '1', 'user-agent': req.headers.get('user-agent') || 'shopify-app-proxy' },
       cache: 'no-store',
     })
+    
     const html = await internalRes.text()
+    
     return new NextResponse(html, {
       status: internalRes.status,
       headers: {
@@ -60,6 +68,10 @@ async function handle(req: NextRequest, pathSeg: string[]) {
       },
     })
   } catch (e: any) {
+    // 💥 İŞTE DOĞRU CATCH BLOĞU BURASI! HATA BURADA YAKALANIP LOGLANACAK
+    console.error("💥 FETCH PATLADI! HEDEF URL:", target.toString());
+    console.error("💥 TAM HATA DETAYI:", e);
+    
     return new NextResponse(`<!doctype html><html><body><p>Storefront yüklenemedi: ${e?.message || 'hata'}</p></body></html>`, {
       status: 500,
       headers: { 'Content-Type': 'text/html; charset=utf-8' },
@@ -70,16 +82,7 @@ async function handle(req: NextRequest, pathSeg: string[]) {
 export async function GET(req: NextRequest, { params }: { params: { path?: string[] } }) {
   return handle(req, params.path ?? [])
 }
+
 export async function POST(req: NextRequest, { params }: { params: { path?: string[] } }) {
   return handle(req, params.path ?? [])
-}
-} catch (error) {
-  // HATANIN ASIL KAYNAĞINI RAILWAY LOGLARINA YAZDIRIYORUZ
-  console.log("💥 FETCH PATLADI! DENENEN URL:", request.url); 
-  console.error("💥 TAM HATA DETAYI:", error);
-  
-  return new Response(`Storefront yüklenemedi: ${error.message}`, { 
-    status: 500,
-    headers: { 'Content-Type': 'application/liquid' }
-  });
 }
