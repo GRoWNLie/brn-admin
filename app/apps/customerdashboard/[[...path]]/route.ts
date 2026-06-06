@@ -47,15 +47,14 @@ async function handle(req: NextRequest, pathSeg: string[]) {
   // 3) Storefront sayfasını internal fetch ile çek, HTML'i Shopify'a dön
   const sub = pathSeg.length ? pathSeg.join('/') : 'login'
   
-  // Mevcut URL'i klonluyoruz ki Shopify'ın ?shop=... gibi kritik parametreleri kaybolmasın
-  const target = new URL(req.url)
-  
-  // İç ağda (Railway container) olduğumuz için SSL (https) aramadan, doğrudan yerel porta bağlanıyoruz!
-  // Node 18+ sürümlerinde IPv6 çakışmasını önlemek için localhost yerine 127.0.0.1 kullanıyoruz.
-  target.protocol = 'http:'
-  target.hostname = '127.0.0.1'
-  target.port = process.env.PORT || '3000'
-  target.pathname = `/storefront/${store.id}/${sub}`
+  // Vercel/Railway gibi serverless ortamlarda 127.0.0.1 dinlenmez.
+  // NEXTAUTH_URL veya VERCEL_URL üzerinden deployment'ın kendi adresini kullanıyoruz.
+  const appBase =
+    process.env.NEXTAUTH_URL ||
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null) ||
+    `http://127.0.0.1:${process.env.PORT || '3000'}`
+
+  const target = new URL(`/storefront/${store.id}/${sub}`, appBase)
 
   try {
     console.log("🔥 INTERNAL FETCH DENENIYOR:", target.toString()) 
