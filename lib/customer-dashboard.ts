@@ -85,6 +85,7 @@ export function maskStore(store: any) {
       hasProxySecret: !!cfg.proxySecret,
       hasCustomerAccount: !!(cfg.customerAccountClientId && cfg.customerAccountClientSecret),
       hasStorefrontToken: !!cfg.storefrontAccessToken,
+      hasStorefrontToken: !!cfg.storefrontAccessToken,
       apiVersion: cfg.apiVersion || null,
     },
   }
