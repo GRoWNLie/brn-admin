@@ -6,6 +6,21 @@ import { logAuditAuto } from '@/lib/audit'
 // Body: { status: "APPROVED" | "REJECTED" | "SPAM", rejectionReason?: string }
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
   const body = await req.json().catch(() => ({}))
+
+  // Featured toggle
+  if (typeof body.featured === 'boolean') {
+    try {
+      const review = await prisma.productReview.update({
+        where: { id: Number(params.id) },
+        data: { featured: body.featured },
+      })
+      await logAuditAuto("review.feature", { req, resource: `review:${params.id}`, detail: { featured: body.featured } })
+      return NextResponse.json({ success: true, review })
+    } catch (e: any) {
+      return NextResponse.json({ success: false, message: e?.message }, { status: 500 })
+    }
+  }
+
   if (!['APPROVED', 'REJECTED', 'SPAM', 'PENDING'].includes(body.status)) {
     return NextResponse.json({ success: false, message: 'Geçersiz status' }, { status: 400 })
   }

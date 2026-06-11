@@ -545,12 +545,15 @@ model ProductReview {
   // AI spam skoru 0-100
   aiSpamScore     Int?     @map("ai_spam_score")
   helpfulCount    Int      @default(0) @map("helpful_count")
+  dislikeCount    Int      @default(0) @map("dislike_count")
+  featured        Boolean  @default(false)
   rejectionReason String?  @map("rejection_reason")
   createdAt       DateTime @default(now()) @map("created_at")
   reviewedAt      DateTime? @map("reviewed_at")
 
   @@index([shopifyProductId])
   @@index([status])
+  @@index([featured])
   @@map("product_reviews")
 }
 

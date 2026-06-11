@@ -59,6 +59,7 @@ export async function GET(req: NextRequest) {
   try {
     const orderBy: any = sort === 'highest' ? { rating: 'desc' }
       : sort === 'lowest' ? { rating: 'asc' }
+      : sort === 'helpful' ? { helpfulCount: 'desc' }
       : { createdAt: 'desc' }
 
     const [reviews, total, avgData] = await Promise.all([
@@ -70,7 +71,7 @@ export async function GET(req: NextRequest) {
         orderBy, take: limit, skip: offset,
         select: {
           id: true, customerName: true, rating: true, title: true,
-          content: true, images: true, helpfulCount: true, createdAt: true,
+          content: true, images: true, helpfulCount: true, dislikeCount: true, createdAt: true,
         },
       }),
       prisma.productReview.count({

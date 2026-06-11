@@ -50,6 +50,16 @@
     return
   }
 
+  // Vote storage (localStorage: hangi yorumlara oy verilmiş)
+  var VOTE_KEY = 'brn_votes_' + PRODUCT_ID
+  function getVotes() {
+    try { return JSON.parse(localStorage.getItem(VOTE_KEY) || '{}') } catch (e) { return {} }
+  }
+  function saveVote(reviewId, type) {
+    var v = getVotes(); v[reviewId] = type
+    try { localStorage.setItem(VOTE_KEY, JSON.stringify(v)) } catch (e) {}
+  }
+
   // ─────────────────────────────────────────────
   //                    i18n
   // ─────────────────────────────────────────────
@@ -73,7 +83,11 @@
     sort_newest: 'Newest',
     sort_highest: 'Highest Rated',
     sort_lowest: 'Lowest Rated',
+    sort_helpful: 'Most Helpful',
     load_more: 'Load More',
+    helpful: 'Helpful',
+    not_helpful: 'Not helpful',
+    vote_question: 'Was this helpful?',
   } : {
     title: 'Müşteri Yorumları',
     based_on: '{n} yorum üzerinden',
@@ -94,7 +108,11 @@
     sort_newest: 'En Yeni',
     sort_highest: 'En Yüksek Puan',
     sort_lowest: 'En Düşük Puan',
+    sort_helpful: 'En Faydalı',
     load_more: 'Daha Fazla Yükle',
+    helpful: 'Faydalı',
+    not_helpful: 'Faydasız',
+    vote_question: 'Bu yorum faydalı mıydı?',
   }
   function t(key, vars) {
     var s = T[key] || key
@@ -147,6 +165,17 @@
     .brn-r-item-photos img { width: 72px; height: 72px; object-fit: cover; border-radius: 8px;
       border: 1px solid ${dark ? '#374151' : '#e5e7eb'}; cursor: pointer; transition: transform .15s; }
     .brn-r-item-photos img:hover { transform: scale(1.05); }
+    .brn-r-vote { display: flex; align-items: center; gap: 8px; margin-top: 12px;
+      padding-top: 10px; border-top: 1px solid ${dark ? '#374151' : '#f3f4f6'}; font-size: 12px;
+      color: ${dark ? '#9ca3af' : '#6b7280'}; flex-wrap: wrap; }
+    .brn-r-vote-btn { display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px;
+      border-radius: 20px; border: 1px solid ${dark ? '#374151' : '#e5e7eb'};
+      background: ${dark ? '#111827' : '#f9fafb'}; color: inherit; font-size: 12px;
+      cursor: pointer; transition: all .15s; font-family: inherit; }
+    .brn-r-vote-btn:hover:not(:disabled) { border-color: #f59e0b; color: #f59e0b; }
+    .brn-r-vote-btn.voted-like { background: #d1fae5; border-color: #059669; color: #065f46; }
+    .brn-r-vote-btn.voted-dislike { background: #fee2e2; border-color: #dc2626; color: #991b1b; }
+    .brn-r-vote-btn:disabled { cursor: default; }
     .brn-r-empty { text-align: center; padding: 40px 20px; color: ${dark ? '#9ca3af' : '#6b7280'}; }
     .brn-r-empty-icon { font-size: 48px; margin-bottom: 12px; }
     .brn-r-empty-text { font-size: 15px; font-weight: 600; color: ${dark ? '#e5e7eb' : '#374151'}; }
@@ -270,6 +299,7 @@
       html += '<option value="newest"' + (state.sort === 'newest' ? ' selected' : '') + '>' + t('sort_newest') + '</option>'
       html += '<option value="highest"' + (state.sort === 'highest' ? ' selected' : '') + '>' + t('sort_highest') + '</option>'
       html += '<option value="lowest"' + (state.sort === 'lowest' ? ' selected' : '') + '>' + t('sort_lowest') + '</option>'
+      html += '<option value="helpful"' + (state.sort === 'helpful' ? ' selected' : '') + '>' + t('sort_helpful') + '</option>'
       html += '</select>'
     } else { html += '<div></div>' }
     if (SHOW_FORM) {
@@ -288,9 +318,11 @@
       }
       html += '</div>'
     } else {
+      var votes = getVotes()
       html += '<div class="brn-r-list">'
       for (var j = 0; j < state.reviews.length; j++) {
         var r = state.reviews[j]
+        var myVote = votes[r.id] || null
         html += '<div class="brn-r-item">'
         html += '<div class="brn-r-item-header">'
         html += '<div>'
@@ -308,6 +340,16 @@
           }
           html += '</div>'
         }
+        // Like / Dislike
+        html += '<div class="brn-r-vote">'
+        html += '<span>' + t('vote_question') + '</span>'
+        html += '<button class="brn-r-vote-btn' + (myVote === 'like' ? ' voted-like' : '') + '" data-vote="like" data-review="' + r.id + '"' + (myVote ? ' disabled' : '') + '>'
+        html += '👍 ' + t('helpful') + ' <span data-like-count="' + r.id + '">(' + (r.helpfulCount || 0) + ')</span>'
+        html += '</button>'
+        html += '<button class="brn-r-vote-btn' + (myVote === 'dislike' ? ' voted-dislike' : '') + '" data-vote="dislike" data-review="' + r.id + '"' + (myVote ? ' disabled' : '') + '>'
+        html += '👎 ' + t('not_helpful') + ' <span data-dislike-count="' + r.id + '">(' + (r.dislikeCount || 0) + ')</span>'
+        html += '</button>'
+        html += '</div>'
         html += '</div>'
       }
       html += '</div>'
@@ -452,6 +494,16 @@
       load(true)
     })
 
+    // Vote butonları
+    var voteBtns = container.querySelectorAll('[data-vote]')
+    for (var vi = 0; vi < voteBtns.length; vi++) {
+      (function (btn) {
+        btn.addEventListener('click', function () {
+          vote(parseInt(btn.getAttribute('data-review'), 10), btn.getAttribute('data-vote'), btn)
+        })
+      })(voteBtns[vi])
+    }
+
     // Star pick
     var pickedRating = 0
     var starButtons = container.querySelectorAll('#brn-r-stars button')
@@ -471,6 +523,32 @@
     if (submitBtn) submitBtn.addEventListener('click', function () {
       submit(pickedRating)
     })
+  }
+
+  function vote(reviewId, type, clickedBtn) {
+    clickedBtn.disabled = true
+    fetch(API_BASE + '/api/public/reviews/vote', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reviewId: reviewId, type: type }),
+    })
+      .then(function (r) { return r.json() })
+      .then(function (d) {
+        if (!d.success) { clickedBtn.disabled = false; return }
+        saveVote(reviewId, type)
+        var all = container.querySelectorAll('[data-review="' + reviewId + '"]')
+        for (var i = 0; i < all.length; i++) {
+          all[i].disabled = true
+          if (all[i].getAttribute('data-vote') === type) {
+            all[i].classList.add(type === 'like' ? 'voted-like' : 'voted-dislike')
+          }
+        }
+        var ls = container.querySelector('[data-like-count="' + reviewId + '"]')
+        var ds = container.querySelector('[data-dislike-count="' + reviewId + '"]')
+        if (ls) ls.textContent = '(' + d.likeCount + ')'
+        if (ds) ds.textContent = '(' + d.dislikeCount + ')'
+      })
+      .catch(function () { clickedBtn.disabled = false })
   }
 
   function submit(rating) {

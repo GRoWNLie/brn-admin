@@ -16,6 +16,9 @@ interface Review {
   status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'SPAM'
   aiSummary: string | null
   aiSpamScore: number | null
+  helpfulCount: number
+  dislikeCount: number
+  featured: boolean
   rejectionReason: string | null
   createdAt: string
   reviewedAt: string | null
@@ -70,6 +73,27 @@ export default function ReviewsPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status, rejectionReason: reason }),
       })
+      await load(activeTab)
+    } finally { setBusy(null) }
+  }
+
+  async function toggleFeatured(id: number, current: boolean) {
+    setBusy(id)
+    try {
+      await fetch(`/api/reviews/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ featured: !current }),
+      })
+      setReviews(prev => prev.map(r => r.id === id ? { ...r, featured: !current } : r))
+    } finally { setBusy(null) }
+  }
+
+  async function deleteReview(id: number) {
+    if (!confirm('Bu yorumu silmek istediğinden emin misin?')) return
+    setBusy(id)
+    try {
+      await fetch(`/api/reviews/${id}`, { method: 'DELETE' })
       await load(activeTab)
     } finally { setBusy(null) }
   }
@@ -151,6 +175,7 @@ export default function ReviewsPage() {
               <div key={r.id} style={{
                 padding: 18, borderBottom: '1px solid var(--border-color)',
                 display: 'grid', gridTemplateColumns: '1fr auto', gap: 16,
+                background: r.featured ? '#FFFBEB' : undefined,
               }}>
                 <div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
@@ -165,6 +190,12 @@ export default function ReviewsPage() {
                         color: r.aiSpamScore >= 50 ? '#991B1B' : '#92400E',
                         padding: '2px 8px', borderRadius: 4, fontSize: 10, fontWeight: 700,
                       }}>🤖 Spam %{r.aiSpamScore}</span>
+                    )}
+                    {r.featured && (
+                      <span style={{
+                        background: '#FDE68A', color: '#92400E',
+                        padding: '2px 8px', borderRadius: 4, fontSize: 10, fontWeight: 700,
+                      }}>⭐ Öne Çıkan</span>
                     )}
                   </div>
                   {r.title && <div style={{ fontWeight: 700, marginBottom: 4 }}>{r.title}</div>}
@@ -185,10 +216,11 @@ export default function ReviewsPage() {
                       </div>
                     ) : null
                   })()}
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 8, display: 'flex', gap: 12 }}>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 8, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
                     <span>📦 {r.productTitle}</span>
                     <span>📅 {formatDate(r.createdAt)}</span>
                     {r.reviewedAt && <span>✓ {formatDate(r.reviewedAt)}</span>}
+                    <span>👍 {r.helpfulCount ?? 0} · 👎 {r.dislikeCount ?? 0}</span>
                   </div>
                   {r.rejectionReason && (
                     <div style={{ marginTop: 8, padding: 8, background: '#FEF2F2', borderRadius: 6, fontSize: 12, color: '#991B1B' }}>
@@ -196,7 +228,22 @@ export default function ReviewsPage() {
                     </div>
                   )}
                 </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 130 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 140 }}>
+                  {activeTab === 'APPROVED' && (
+                    <button
+                      className="btn-secondary"
+                      style={{
+                        padding: '6px 10px', fontSize: 12,
+                        background: r.featured ? '#FDE68A' : undefined,
+                        color: r.featured ? '#92400E' : undefined,
+                        borderColor: r.featured ? '#F59E0B' : undefined,
+                        fontWeight: r.featured ? 700 : undefined,
+                      }}
+                      disabled={busy === r.id}
+                      onClick={() => toggleFeatured(r.id, r.featured)}>
+                      {r.featured ? '★ Öne Çıkarmayı Kaldır' : '☆ Öne Çıkar'}
+                    </button>
+                  )}
                   {activeTab === 'PENDING' && (
                     <>
                       <button className="btn-primary" style={{ padding: '6px 10px', fontSize: 12 }}
@@ -218,6 +265,10 @@ export default function ReviewsPage() {
                       disabled={busy === r.id}
                       onClick={() => setStatus(r.id, 'PENDING')}>↩️ Tekrar İncele</button>
                   )}
+                  <button className="btn-secondary"
+                    style={{ padding: '6px 10px', fontSize: 12, color: '#DC2626', borderColor: '#FCA5A5' }}
+                    disabled={busy === r.id}
+                    onClick={() => deleteReview(r.id)}>🗑️ Sil</button>
                 </div>
               </div>
             ))}
