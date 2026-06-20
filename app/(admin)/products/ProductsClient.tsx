@@ -25,6 +25,10 @@ export default function ProductsClient({
   const [exportBusy, setExportBusy] = useState(false)
   const exportRef = useRef<HTMLDivElement>(null)
   const [binMap, setBinMap] = useState<Record<string, string>>({})
+  const [localTags, setLocalTags] = useState<Record<string, string[]>>(() =>
+    Object.fromEntries(data.products.map(p => [p.id, p.tags]))
+  )
+  const [tagBusy, setTagBusy] = useState<Set<string>>(new Set())
 
   // ── Modal state: hangisi açık ──
   type ModalKind = null | 'price' | 'stock' | 'tags'
@@ -72,6 +76,27 @@ export default function ProductsClient({
   function toggleAll() {
     if (selected.size === data.products.length) setSelected(new Set())
     else setSelected(new Set(data.products.map(p => p.id)))
+  }
+
+  async function toggleNewTag(productId: string) {
+    const tags = localTags[productId] ?? []
+    const hasNew = tags.map(t => t.toLowerCase()).includes('yeni')
+    const newTags = hasNew ? tags.filter(t => t.toLowerCase() !== 'yeni') : [...tags, 'Yeni']
+    setTagBusy(prev => { const s = new Set(prev); s.add(productId); return s })
+    try {
+      const res = await fetch(`/api/shopify/products/${encodeURIComponent(productId)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ product: { tags: newTags } }),
+      })
+      const d = await res.json()
+      if (d.success) setLocalTags(prev => ({ ...prev, [productId]: newTags }))
+      else alert('Etiket güncelleme hatası: ' + (d.errors?.join(', ') || d.message))
+    } catch (e: any) {
+      alert('İstek hatası: ' + e?.message)
+    } finally {
+      setTagBusy(prev => { const s = new Set(prev); s.delete(productId); return s })
+    }
   }
 
   // ── CSV yardımcıları ──────────────────────────────────────────
@@ -392,7 +417,16 @@ export default function ProductsClient({
                           : undefined}
                       />
                       <div className="product-info">
-                        <span className="product-name">{p.title}</span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <span className="product-name">{p.title}</span>
+                          {(localTags[p.id] ?? p.tags).map(t => t.toLowerCase()).includes('yeni') && (
+                            <span style={{
+                              background: '#F59E0B', color: '#fff',
+                              fontSize: 10, fontWeight: 700, padding: '2px 6px',
+                              borderRadius: 4, letterSpacing: '0.5px',
+                            }}>YENİ</span>
+                          )}
+                        </div>
                         <span className="product-sku">{p.sku ?? p.handle}</span>
                       </div>
                     </div>
@@ -412,6 +446,20 @@ export default function ProductsClient({
                   </td>
                   <td style={{ textAlign: 'right' }}>
                     <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                      <button
+                        className="btn-secondary"
+                        title={(localTags[p.id] ?? p.tags).map(t => t.toLowerCase()).includes('yeni') ? '"Yeni" etiketini kaldır' : '"Yeni" etiketi ekle'}
+                        disabled={tagBusy.has(p.id)}
+                        onClick={() => toggleNewTag(p.id)}
+                        style={{
+                          padding: '6px 10px', fontSize: 12,
+                          ...((localTags[p.id] ?? p.tags).map(t => t.toLowerCase()).includes('yeni')
+                            ? { background: '#FEF3C7', color: '#92400E', borderColor: '#FDE68A' }
+                            : {}),
+                        }}
+                      >
+                        {tagBusy.has(p.id) ? '⏳' : '🏷️'}
+                      </button>
                       <Link
                         href={`/products/${encodeURIComponent(p.id)}/edit`}
                         className="btn-secondary"

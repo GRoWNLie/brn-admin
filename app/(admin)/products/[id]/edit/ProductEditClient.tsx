@@ -21,8 +21,57 @@ export default function ProductEditClient({ product }: { product: ProductEditDet
     inventoryQuantity: v.inventoryQuantity ?? 0,
   })))
 
+  const [images, setImages] = useState<Array<{ id: string; url: string; altText: string | null }>>(product.images)
+  const [imgUploading, setImgUploading] = useState(false)
+  const [imgDeleting, setImgDeleting] = useState<Set<string>>(new Set())
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState<{ kind: 'success' | 'error'; text: string } | null>(null)
+
+  async function handleImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setImgUploading(true)
+    try {
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => resolve(reader.result as string)
+        reader.onerror = reject
+        reader.readAsDataURL(file)
+      })
+      const res = await fetch(`/api/shopify/products/${encodeURIComponent(product.id)}/images`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ base64, filename: file.name }),
+      })
+      const data = await res.json()
+      if (data.success) setImages(prev => [...prev, data.image])
+      else setMessage({ kind: 'error', text: '❌ Görsel yükleme hatası: ' + data.message })
+    } catch (e: any) {
+      setMessage({ kind: 'error', text: '❌ Görsel yükleme hatası: ' + e?.message })
+    } finally {
+      setImgUploading(false)
+      e.target.value = ''
+    }
+  }
+
+  async function handleImageDelete(imgId: string) {
+    if (!confirm('Bu görseli Shopify\'dan kalıcı olarak silmek istiyor musun?')) return
+    setImgDeleting(prev => { const s = new Set(prev); s.add(imgId); return s })
+    try {
+      const res = await fetch(`/api/shopify/products/${encodeURIComponent(product.id)}/images`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ imageId: imgId }),
+      })
+      const data = await res.json()
+      if (data.success) setImages(prev => prev.filter(img => img.id !== imgId))
+      else setMessage({ kind: 'error', text: '❌ Görsel silme hatası: ' + data.message })
+    } catch (e: any) {
+      setMessage({ kind: 'error', text: '❌ Görsel silme hatası: ' + e?.message })
+    } finally {
+      setImgDeleting(prev => { const s = new Set(prev); s.delete(imgId); return s })
+    }
+  }
 
   function updateVariantField(idx: number, key: string, value: any) {
     setVariants(prev => prev.map((v, i) => i === idx ? { ...v, [key]: value } : v))
@@ -227,28 +276,66 @@ export default function ProductEditClient({ product }: { product: ProductEditDet
             </div>
           </div>
 
-          {/* Görseller (sadece görüntüleme) */}
-          {product.images.length > 0 && (
-            <div className="panel-card">
-              <div className="settings-section-title">Görseller</div>
+          {/* Görseller */}
+          <div className="panel-card">
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+              <div className="settings-section-title" style={{ margin: 0 }}>Görseller</div>
+              <label style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+                padding: '6px 14px', borderRadius: 8, fontSize: 13, fontWeight: 600,
+                background: 'var(--accent-color)', color: '#fff', cursor: 'pointer',
+                opacity: imgUploading ? 0.6 : 1,
+              }}>
+                {imgUploading ? '⏳ Yükleniyor...' : '+ Görsel Ekle'}
+                <input
+                  type="file"
+                  accept="image/*"
+                  style={{ display: 'none' }}
+                  disabled={imgUploading}
+                  onChange={handleImageUpload}
+                />
+              </label>
+            </div>
+            {images.length === 0 ? (
+              <div style={{ color: 'var(--text-muted)', fontSize: 13, textAlign: 'center', padding: 24 }}>
+                Henüz görsel yok. Görsel eklemek için yukarıdaki butonu kullan.
+              </div>
+            ) : (
               <div style={{
                 display: 'grid',
                 gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))',
                 gap: 10,
               }}>
-                {product.images.map(img => (
-                  <div key={img.id} style={{
-                    aspectRatio: '1', borderRadius: 8,
-                    overflow: 'hidden', border: '1px solid var(--border-color)',
-                    background: 'var(--hover-bg)',
-                  }}>
-                    <img src={img.url} alt={img.altText ?? ''}
-                      style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                {images.map(img => (
+                  <div key={img.id} style={{ position: 'relative' }}>
+                    <div style={{
+                      aspectRatio: '1', borderRadius: 8,
+                      overflow: 'hidden', border: '1px solid var(--border-color)',
+                      background: 'var(--hover-bg)',
+                    }}>
+                      <img src={img.url} alt={img.altText ?? ''}
+                        style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    </div>
+                    <button
+                      onClick={() => handleImageDelete(img.id)}
+                      disabled={imgDeleting.has(img.id)}
+                      title="Görseli sil"
+                      style={{
+                        position: 'absolute', top: 4, right: 4,
+                        background: imgDeleting.has(img.id) ? '#9CA3AF' : '#DC2626',
+                        color: '#fff', border: 'none', borderRadius: '50%',
+                        width: 22, height: 22, cursor: 'pointer',
+                        fontSize: 12, lineHeight: '22px', textAlign: 'center',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      }}
+                    >
+                      {imgDeleting.has(img.id) ? '⏳' : '✕'}
+                    </button>
                   </div>
                 ))}
               </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
 
         {/* SAĞ: META */}

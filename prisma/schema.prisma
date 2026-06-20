@@ -992,6 +992,9 @@ model VisitorSession {
   path      String?  @db.Text
   referrer  String?  @db.Text
   userAgent String?  @map("user_agent") @db.Text
+  ip        String?  @db.VarChar(45)
+  city      String?  @db.VarChar(100)
+  country   String?  @db.VarChar(2)
   firstSeen DateTime @default(now()) @map("first_seen")
   lastSeen  DateTime @default(now()) @updatedAt @map("last_seen")
 

@@ -52,6 +52,7 @@ const menuItems: MenuItem[] = [
       { href: '/customers', label: 'Müşteriler' },
       { href: '/customer-segments', label: 'Müşteri Segmentleri' },
       { href: '/inbox', label: '✉️ Gelen Kutusu' },
+      { href: '/visitors', label: '🔴 Canlı Ziyaretçiler' },
     ],
   },
 

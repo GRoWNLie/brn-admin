@@ -441,6 +441,7 @@ export interface ProductListItem {
   sku: string | null
   barcode: string | null
   currency: string
+  tags: string[]
 }
 
 export interface ProductListResult {
@@ -461,6 +462,7 @@ const PRODUCTS_LIST_QUERY = /* GraphQL */ `
           productType
           status
           totalInventory
+          tags
           featuredImage { url }
           variants(first: 1) {
             edges {
@@ -511,6 +513,7 @@ export async function getProducts(opts: {
         sku: variant?.sku ?? null,
         barcode: variant?.barcode ?? null,
         currency: 'TRY',
+        tags: node.tags ?? [],
       }
     }),
     pageInfo: data.products.pageInfo,
