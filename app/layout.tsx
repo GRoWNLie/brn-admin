@@ -1,11 +1,14 @@
 import type { Metadata } from 'next'
+
 import './globals.css'
 import SessionProvider from '@/components/SessionProvider'
 
-export const metadata: Metadata = {
-  title: 'BRN ADMIN',
-  description: 'BRN Yönetim Paneli',
-}
+export const metadata = {
+  robots: {
+    index: false,
+    follow: false,
+  },
+};
 
 export default function RootLayout({
   children,
