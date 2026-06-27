@@ -80,8 +80,8 @@ const FEATURED_SECTION_LIQUID = (apiBase: string) => `{% comment %}
     </div>
 
     <div class="brn-feat-grid">
-      <div class="brn-feat-summary">
-        <div class="brn-feat-score">{{ section.settings.summary_score }}<span>/5</span></div>
+      <div class="brn-feat-summary" data-api-base="${apiBase}">
+        <div class="brn-feat-score"><span class="brn-feat-score-num">{{ section.settings.summary_score }}</span><span>/5</span></div>
         <div class="brn-feat-summary-stars" id="brn-feat-summary-stars">
           {% assign full = section.settings.summary_stars | round %}
           {% for i in (1..5) %}
@@ -95,7 +95,7 @@ const FEATURED_SECTION_LIQUID = (apiBase: string) => `{% comment %}
             {% assign star = 6 | minus: i %}
             {% assign idx = i | minus: 1 %}
             {% assign pct = pcts[idx] | default: 0 | strip %}
-            <div class="brn-feat-bar-row">
+            <div class="brn-feat-bar-row" data-star="{{ star }}">
               <span class="brn-feat-bar-lbl">{{ star }}★</span>
               <div class="brn-feat-bar-bg"><div class="brn-feat-bar-fill" style="width:{{ pct }}%;"></div></div>
               <span class="brn-feat-bar-pct">%{{ pct }}</span>
@@ -178,6 +178,35 @@ const FEATURED_SECTION_LIQUID = (apiBase: string) => `{% comment %}
   var apiBase = host.getAttribute('data-api-base')
   var limit   = host.getAttribute('data-limit') || '4'
   var showProd= host.getAttribute('data-show-product') === 'true'
+
+  // CANLI ÖZET VERİSİ — toplam, ortalama, dağılım
+  fetch(apiBase + '/api/public/reviews/stats')
+    .then(function(r){ return r.json() })
+    .then(function(s){
+      if (!s.success || !s.total) return
+      var summary = document.querySelector('.brn-feat-summary')
+      if (!summary) return
+      var scoreNum = summary.querySelector('.brn-feat-score-num')
+      if (scoreNum) scoreNum.textContent = String(s.average).replace('.', ',')
+      var starsEl = summary.querySelector('#brn-feat-summary-stars')
+      if (starsEl) {
+        var full = Math.round(s.average), out = ''
+        for (var i = 1; i <= 5; i++) out += i <= full ? '★' : '☆'
+        starsEl.textContent = out
+      }
+      var countEl = summary.querySelector('.brn-feat-summary-count')
+      if (countEl) countEl.textContent = s.total.toLocaleString('tr-TR') + ' doğrulanmış değerlendirme'
+      // Yıldız dağılım barları
+      var rows = summary.querySelectorAll('.brn-feat-bar-row')
+      rows.forEach(function(row, idx){
+        var pct = s.distribution[idx] || 0
+        var fill = row.querySelector('.brn-feat-bar-fill')
+        var pctEl = row.querySelector('.brn-feat-bar-pct')
+        if (fill) fill.style.width = pct + '%'
+        if (pctEl) pctEl.textContent = '%' + pct
+      })
+    })
+    .catch(function(){})
 
   function stars(n) {
     var s = ''

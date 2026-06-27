@@ -1,0 +1,133 @@
+From 593e7650e00db8f7646a9a82863d6a1a741dfb75 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Sat, 27 Jun 2026 14:51:58 +0000
+Subject: [PATCH] feat: live stats summary card for featured reviews
+
+Adds /api/public/reviews/stats endpoint returning total approved reviews,
+average rating, and star distribution. Featured section now fetches and
+displays these live values in the left summary card (score, stars, count,
+distribution bars) instead of manual settings.
+---
+ app/(admin)/reviews/embed/page.tsx    | 35 +++++++++++++++++--
+ app/api/public/reviews/stats/route.ts | 49 +++++++++++++++++++++++++++
+ 2 files changed, 81 insertions(+), 3 deletions(-)
+ create mode 100644 app/api/public/reviews/stats/route.ts
+
+diff --git a/app/(admin)/reviews/embed/page.tsx b/app/(admin)/reviews/embed/page.tsx
+index 01e1eb0..e522e25 100644
+--- a/app/(admin)/reviews/embed/page.tsx
++++ b/app/(admin)/reviews/embed/page.tsx
+@@ -80,8 +80,8 @@ const FEATURED_SECTION_LIQUID = (apiBase: string) => `{% comment %}
+     </div>
+ 
+     <div class="brn-feat-grid">
+-      <div class="brn-feat-summary">
+-        <div class="brn-feat-score">{{ section.settings.summary_score }}<span>/5</span></div>
++      <div class="brn-feat-summary" data-api-base="${apiBase}">
++        <div class="brn-feat-score"><span class="brn-feat-score-num">{{ section.settings.summary_score }}</span><span>/5</span></div>
+         <div class="brn-feat-summary-stars" id="brn-feat-summary-stars">
+           {% assign full = section.settings.summary_stars | round %}
+           {% for i in (1..5) %}
+@@ -95,7 +95,7 @@ const FEATURED_SECTION_LIQUID = (apiBase: string) => `{% comment %}
+             {% assign star = 6 | minus: i %}
+             {% assign idx = i | minus: 1 %}
+             {% assign pct = pcts[idx] | default: 0 | strip %}
+-            <div class="brn-feat-bar-row">
++            <div class="brn-feat-bar-row" data-star="{{ star }}">
+               <span class="brn-feat-bar-lbl">{{ star }}★</span>
+               <div class="brn-feat-bar-bg"><div class="brn-feat-bar-fill" style="width:{{ pct }}%;"></div></div>
+               <span class="brn-feat-bar-pct">%{{ pct }}</span>
+@@ -179,6 +179,35 @@ const FEATURED_SECTION_LIQUID = (apiBase: string) => `{% comment %}
+   var limit   = host.getAttribute('data-limit') || '4'
+   var showProd= host.getAttribute('data-show-product') === 'true'
+ 
++  // CANLI ÖZET VERİSİ — toplam, ortalama, dağılım
++  fetch(apiBase + '/api/public/reviews/stats')
++    .then(function(r){ return r.json() })
++    .then(function(s){
++      if (!s.success || !s.total) return
++      var summary = document.querySelector('.brn-feat-summary')
++      if (!summary) return
++      var scoreNum = summary.querySelector('.brn-feat-score-num')
++      if (scoreNum) scoreNum.textContent = String(s.average).replace('.', ',')
++      var starsEl = summary.querySelector('#brn-feat-summary-stars')
++      if (starsEl) {
++        var full = Math.round(s.average), out = ''
++        for (var i = 1; i <= 5; i++) out += i <= full ? '★' : '☆'
++        starsEl.textContent = out
++      }
++      var countEl = summary.querySelector('.brn-feat-summary-count')
++      if (countEl) countEl.textContent = s.total.toLocaleString('tr-TR') + ' doğrulanmış değerlendirme'
++      // Yıldız dağılım barları
++      var rows = summary.querySelectorAll('.brn-feat-bar-row')
++      rows.forEach(function(row, idx){
++        var pct = s.distribution[idx] || 0
++        var fill = row.querySelector('.brn-feat-bar-fill')
++        var pctEl = row.querySelector('.brn-feat-bar-pct')
++        if (fill) fill.style.width = pct + '%'
++        if (pctEl) pctEl.textContent = '%' + pct
++      })
++    })
++    .catch(function(){})
++
+   function stars(n) {
+     var s = ''
+     for (var i = 0; i < 5; i++) s += i < Math.round(n) ? '★' : '☆'
+diff --git a/app/api/public/reviews/stats/route.ts b/app/api/public/reviews/stats/route.ts
+new file mode 100644
+index 0000000..8d7ee22
+--- /dev/null
++++ b/app/api/public/reviews/stats/route.ts
+@@ -0,0 +1,49 @@
++import { NextRequest } from 'next/server'
++import { prisma } from '@/lib/prisma'
++import { corsJson, corsPreflight } from '@/lib/cors'
++
++export async function OPTIONS(req: NextRequest) {
++  return corsPreflight(req)
++}
++
++/**
++ * GET /api/public/reviews/stats
++ * Tüm onaylı yorumların özeti: toplam, ortalama puan, yıldız dağılımı.
++ */
++export async function GET(req: NextRequest) {
++  try {
++    const grouped = await prisma.productReview.groupBy({
++      by: ['rating'],
++      where: { status: 'APPROVED' },
++      _count: { rating: true },
++    })
++
++    const counts = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 } as Record<number, number>
++    let total = 0
++    let sum = 0
++    grouped.forEach(g => {
++      const r = Number(g.rating) || 0
++      const c = g._count.rating
++      if (r >= 1 && r <= 5) {
++        counts[r] = c
++        total += c
++        sum += r * c
++      }
++    })
++
++    const average = total > 0 ? sum / total : 0
++    const distribution = [5, 4, 3, 2, 1].map(star =>
++      total > 0 ? Math.round((counts[star] / total) * 100) : 0
++    )
++
++    return corsJson(req, {
++      success: true,
++      total,
++      average: Number(average.toFixed(1)),
++      counts,
++      distribution, // [5★%, 4★%, 3★%, 2★%, 1★%]
++    })
++  } catch (e: any) {
++    return corsJson(req, { success: false, message: e?.message }, { status: 500 })
++  }
++}
+-- 
+2.43.0
+
